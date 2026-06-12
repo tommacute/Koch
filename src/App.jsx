@@ -43,6 +43,10 @@ const isoData = (d) =>
 const hojeStr = () => isoData(new Date());
 const amanhaStr = () => { const d = new Date(); d.setDate(d.getDate() + 1); return isoData(d); };
 
+// Dia "efetivo" das funções fixas: o dia só vira às 6h da manhã.
+// Marcou às 23h? Continua marcado até as 6h do dia seguinte. Às 6h, zera.
+const diaEfetivo = () => { const d = new Date(); d.setHours(d.getHours() - 6); return isoData(d); };
+
 const diasDesde = (iso) => {
   if (!iso) return 0;
   const p = iso.split("-").map(Number);
@@ -50,11 +54,16 @@ const diasDesde = (iso) => {
   return Math.floor((Date.now() - new Date(p[0], p[1] - 1, p[2]).getTime()) / 86400000);
 };
 
+const diasAte = (iso) => -diasDesde(iso);
+
 const fmtData = (iso) => {
   if (!iso) return "";
   const p = iso.split("-");
   return p.length !== 3 ? iso : `${p[2]}/${p[1]}`;
 };
+
+const fmtDinheiro = (v) =>
+  "R$ " + (v || 0).toFixed(2).replace(".", ",").replace(/\B(?=(\d{3})+(?!\d))/g, ".");
 
 const escapeHtml = (s) =>
   (s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -84,22 +93,85 @@ const STATUS = {
   travado: { label: "Travado", bg: "#FDE3E3", fg: "#C0392B" },
   feito: { label: "Feito", bg: "#E3F6E8", fg: "#1E8E3E" },
 };
-const ORDEM_TABS = ["hoje","captura","demandas","pessoas","anotacoes","kanban","pessoal","contas","conteudos"];
+
+// ============ Contas: tags e classificação automática ============
+const TAGS_BASE = [
+  { nome: "Uber", cor: "#111111", palavras: ["uber", "99", "taxi", "corrida"] },
+  { nome: "Delivery", cor: "#EA1D2C", palavras: ["ifood", "delivery", "rappi", "entrega", "zedelivery"] },
+  { nome: "Restaurante", cor: "#E8870C", palavras: ["restaurante", "comida", "almoco", "jantar", "lanche", "pizza", "hamburguer", "acai", "padaria", "cafe"] },
+  { nome: "Mercado/Farmácia", cor: "#1E8E3E", palavras: ["mercado", "supermercado", "farmacia", "remedio", "hortifruti", "feira"] },
+  { nome: "Presente", cor: "#D6336C", palavras: ["presente", "flores", "lembranca"] },
+  { nome: "Shopping", cor: "#6D4AFF", palavras: ["shopping", "roupa", "tenis", "loja", "sapato", "camisa"] },
+  { nome: "Lazer", cor: "#1A73E8", palavras: ["lazer", "cinema", "bar", "festa", "show", "jogo", "netflix", "spotify", "streaming", "praia"] },
+];
+const COR_OUTROS = "#8E8E93";
+const COR_ENTRADA = "#0B8043";
+const PALETA_TAGS = ["#C0392B", "#0B8043", "#B45309", "#00838F", "#7B1FA2", "#455A64", "#C62828", "#2E7D32"];
+
+function classificarTag(descricao, tagsCustom) {
+  const txt = normalizar(descricao);
+  const todas = [...(tagsCustom || []), ...TAGS_BASE];
+  for (const tag of todas) {
+    if ((tag.palavras || []).some((p) => p && txt.includes(normalizar(p)))) return tag.nome;
+  }
+  return "Outros";
+}
+
+function corDaTag(nome, tagsCustom) {
+  if (nome === "Entrada") return COR_ENTRADA;
+  const todas = [...TAGS_BASE, ...(tagsCustom || [])];
+  const t = todas.find((x) => x.nome === nome);
+  return t ? t.cor : COR_OUTROS;
+}
+
+function parseLancamento(texto) {
+  const m = texto.match(/(\d+(?:[.,]\d{1,2})?)/);
+  if (!m) return null;
+  const valor = parseFloat(m[1].replace(",", "."));
+  let resto = texto.replace(m[0], " ");
+  resto = resto.replace(/r\$\s*/gi, " ").replace(/\breais?\b/gi, " ").replace(/\s+/g, " ").trim();
+  return { valor, descricao: resto || "Sem descrição" };
+}
+
+// ============ Conteúdos: formatos, etapas e editorias ============
+const FORMATOS = {
+  react: "React", carrossel: "Carrossel", card: "Card", reels: "Reels", estatico: "Estático",
+};
+const ETAPAS = {
+  ideia: { label: "Ideia", bg: "#EFEFEF", fg: "#444444" },
+  roteiro: { label: "Roteiro", bg: AMARELO_CLARO, fg: AMARELO_TEXTO },
+  gravado: { label: "Gravado", bg: "#FFE8CC", fg: "#B45309" },
+  editado: { label: "Editado", bg: "#CDE6FF", fg: "#1A73E8" },
+  noar: { label: "No ar", bg: "#E3F6E8", fg: "#1E8E3E" },
+};
+const EDITORIAS = [
+  "Máfia dos Combustíveis", "Humanização", "Política", "Críticas Cláudio/Douglas",
+  "Apoio Desembargador", "Corrupção", "Transportes/Detran", "Identidade Política",
+  "Indústria das Multas", "Outros", "Segurança", "Críticas Alerj",
+  "Motoristas de Aplicativo", "Mulheres", "Prefeitura Entregas", "Trajetória",
+];
+const PALETA_EDITORIAS = [
+  "#C0392B", "#D6336C", "#1A73E8", "#B45309", "#0B8043", "#7B1FA2", "#00838F", "#6D4AFF",
+  "#E8870C", "#8E8E93", "#455A64", "#C62828", "#2E7D32", "#E91E63", "#5436CC", "#111111",
+];
+const corDaEditoria = (nome) => {
+  const i = EDITORIAS.indexOf(nome);
+  return i >= 0 ? PALETA_EDITORIAS[i % PALETA_EDITORIAS.length] : COR_OUTROS;
+};
+
+const ORDEM_TABS = ["hoje", "captura", "demandas", "pessoas", "anotacoes", "pessoal", "conteudos"];
 const DEFAULT_DATA = {
   appName: "KOCH",
   tabNames: {
     hoje: "Hoje", captura: "Captura", demandas: "Demandas", pessoas: "Pessoas",
-    anotacoes: "Anotações", kanban: "Acompanhamento", pessoal: "Vida Pessoal",
-    contas: "Contas", conteudos: "Conteúdos",
+    anotacoes: "Anotações", pessoal: "Vida Pessoal", conteudos: "Conteúdos",
   },
   lembretesTitulo: "Funções fixas",
   capturas: [], demandas: [], pessoas: [], lembretes: [], lembreteChecks: {},
-  anotacoes: [], kanban: { colunas: [
-    { id: "c1", nome: "A fazer", cards: [] },
-    { id: "c2", nome: "Fazendo", cards: [] },
-    { id: "c3", nome: "Feito", cards: [] },
-  ]},
+  anotacoes: [],
   pessoal: { tarefas: [] },
+  contas: { lancamentos: [], tagsCustom: [] },
+  conteudos: { itens: [], pautas: [], datas: [] },
   lixeira: [],
 };
 
@@ -174,6 +246,14 @@ function Card({ children, className = "", style = {} }) {
 
 function Vazio({ texto }) {
   return <p className="text-sm text-gray-400 py-4 text-center px-4">{texto}</p>;
+}
+
+function ChipFiltro({ ativo, onClick, children }) {
+  return (
+    <button onClick={onClick}
+      className={"text-sm px-3.5 py-2 rounded-xl flex-shrink-0 font-bold " + (ativo ? "" : "bg-white border border-gray-200 text-gray-600")}
+      style={ativo ? { backgroundColor: PRETO, color: AMARELO } : {}}>{children}</button>
+  );
 }
 
 // ============ Demandas ============
@@ -257,13 +337,23 @@ function DemandasScreen({ data, update, today, amanha }) {
   const [filtro, setFiltro] = useState("ativas");
   const [filtroPessoa, setFiltroPessoa] = useState("");
   const [expandida, setExpandida] = useState(null);
+
   let lista = [...data.demandas];
-  if (filtro === "ativas") lista = lista.filter((d) => d.status !== "feito");
+  if (filtro === "ativas") lista = lista.filter((d) => !d.pessoaId && d.status !== "feito");
+  if (filtro === "pessoas") lista = lista.filter((d) => d.pessoaId && d.status !== "feito");
   if (filtro === "travado") lista = lista.filter((d) => d.status === "travado");
   if (filtro === "feito") lista = lista.filter((d) => d.status === "feito");
   if (filtroPessoa) lista = lista.filter((d) => d.pessoaId === filtroPessoa);
   lista.sort(ordenarDemandas);
-  const filtros = [{ k: "ativas", label: "Ativas" }, { k: "travado", label: "Travadas" }, { k: "feito", label: "Feitas" }, { k: "todas", label: "Todas" }];
+
+  const filtros = [
+    { k: "ativas", label: "Ativas" },
+    { k: "pessoas", label: "Pessoas" },
+    { k: "travado", label: "Travadas" },
+    { k: "feito", label: "Feitas" },
+    { k: "todas", label: "Todas" },
+  ];
+
   return (
     <div>
       <ScreenTitle data={data} update={update} tabKey="demandas" />
@@ -271,12 +361,8 @@ function DemandasScreen({ data, update, today, amanha }) {
         <AddInput placeholder="Nova demanda…" onAdd={(t) => update((d) => { d.demandas.unshift({ id: uid(), titulo: t, prazo: "", prioridade: "media", status: "afazer", pessoaId: null }); })} />
       </div>
       <div className="flex gap-2 mb-3 overflow-x-auto pb-1">
-        {filtros.map((f) => (
-          <button key={f.k} onClick={() => setFiltro(f.k)}
-            className={"text-sm px-3.5 py-2 rounded-xl flex-shrink-0 font-bold " + (filtro === f.k ? "" : "bg-white border border-gray-200 text-gray-600")}
-            style={filtro === f.k ? { backgroundColor: PRETO, color: AMARELO } : {}}>{f.label}</button>
-        ))}
-        {data.pessoas.length > 0 && (
+        {filtros.map((f) => <ChipFiltro key={f.k} ativo={filtro === f.k} onClick={() => setFiltro(f.k)}>{f.label}</ChipFiltro>)}
+        {data.pessoas.length > 0 && filtro === "pessoas" && (
           <select value={filtroPessoa} onChange={(e) => setFiltroPessoa(e.target.value)} className="text-sm bg-white border border-gray-200 rounded-xl px-3 py-2 outline-none flex-shrink-0 text-gray-600 font-medium">
             <option value="">Todas as pessoas</option>
             {data.pessoas.map((p) => <option key={p.id} value={p.id}>{p.nome}</option>)}
@@ -284,21 +370,23 @@ function DemandasScreen({ data, update, today, amanha }) {
         )}
       </div>
       <Card className="divide-y divide-gray-100">
-        {lista.length === 0 && <Vazio texto="Nenhuma demanda aqui." />}
+        {lista.length === 0 && <Vazio texto={filtro === "pessoas" ? "Nenhuma demanda direcionada a alguém." : "Nenhuma demanda aqui."} />}
         {lista.map((d) => (
           <DemandaItem key={d.id} d={d} data={data} update={update} today={today} amanha={amanha}
             expandida={expandida === d.id} onToggle={() => setExpandida(expandida === d.id ? null : d.id)} />
         ))}
       </Card>
+      {filtro === "ativas" && <p className="text-xs text-gray-400 mt-2 px-1">Demandas direcionadas a alguém ficam na aba "Pessoas" aqui do lado.</p>}
     </div>
   );
 }
 
 // ============ Funções Fixas ============
-function FuncoesFixas({ data, update, today }) {
+function FuncoesFixas({ data, update }) {
   const [aberto, setAberto] = useState(false);
-  const toggle = (id) => update((d) => { if (d.lembreteChecks[id] === today) delete d.lembreteChecks[id]; else d.lembreteChecks[id] = today; });
-  const feitos = data.lembretes.filter((l) => data.lembreteChecks[l.id] === today).length;
+  const diaFx = diaEfetivo();
+  const toggle = (id) => update((d) => { if (d.lembreteChecks[id] === diaFx) delete d.lembreteChecks[id]; else d.lembreteChecks[id] = diaFx; });
+  const feitos = data.lembretes.filter((l) => data.lembreteChecks[l.id] === diaFx).length;
   const total = data.lembretes.length;
   return (
     <div className="rounded-2xl border shadow-sm mb-5 overflow-hidden" style={{ backgroundColor: ROXO_CLARO, borderColor: "#DCD2FF" }}>
@@ -315,13 +403,12 @@ function FuncoesFixas({ data, update, today }) {
       </button>
       {aberto && (
         <div className="px-4 pb-4">
-          {total === 0 && <p className="text-sm pb-2" style={{ color: ROXO_TEXTO }}>Suas obrigações de todo dia — ex.: olhar o G1, postar no TikTok. Voltam desmarcadas a cada dia.</p>}
+          {total === 0 && <p className="text-sm pb-2" style={{ color: ROXO_TEXTO }}>Suas obrigações de todo dia — ex.: olhar o G1, postar no TikTok. Zeram às 6h da manhã.</p>}
           <ul>
             {data.lembretes.map((l) => {
-              const feito = data.lembreteChecks[l.id] === today;
+              const feito = data.lembreteChecks[l.id] === diaFx;
               return (
                 <li key={l.id} className="flex items-center gap-2.5 py-2">
-                  <span className="text-lg leading-none flex-shrink-0" style={{ color: ROXO }}>•</span>
                   <Check checked={feito} onChange={() => toggle(l.id)} cor={ROXO} marca="#FFF" />
                   <div className="flex-1 min-w-0">
                     <EditableText value={l.texto} onSave={(v) => update((d) => { const a = d.lembretes.find((x) => x.id === l.id); if (a) a.texto = v; })}
@@ -352,7 +439,7 @@ function HojeScreen({ data, update, today, amanha }) {
   return (
     <div>
       <ScreenTitle data={data} update={update} tabKey="hoje" />
-      <FuncoesFixas data={data} update={update} today={today} />
+      <FuncoesFixas data={data} update={update} />
       {semNada && <Card className="px-4 py-6 text-center"><p className="text-gray-900 font-bold">Nada atrasado, nada vencendo</p><p className="text-gray-400 text-sm mt-1">Demandas atrasadas ou com prazo em 24h aparecem aqui.</p></Card>}
       {atrasadas.length > 0 && (
         <div className="mb-5">
@@ -418,7 +505,7 @@ function CapturaScreen({ data, update, goTo }) {
               <button className="text-xs px-3 py-1.5 rounded-full bg-gray-100 text-gray-700 font-bold"
                 onClick={() => update((d) => { d.anotacoes.unshift({ id: uid(), html: escapeHtml(c.texto), atualizadoEm: hojeStr() }); d.capturas = d.capturas.filter((x) => x.id !== c.id); })}>→ Anotação</button>
               <button className="text-xs px-3 py-1.5 rounded-full bg-gray-100 text-gray-700 font-bold"
-                onClick={() => update((d) => { if (d.kanban.colunas.length > 0) { d.kanban.colunas[0].cards.push({ id: uid(), texto: c.texto }); d.capturas = d.capturas.filter((x) => x.id !== c.id); } })}>→ Quadro</button>
+                onClick={() => { update((d) => { d.conteudos.pautas.unshift({ id: uid(), texto: c.texto, editoria: "Outros", link: "", criadoEm: hojeStr() }); d.capturas = d.capturas.filter((x) => x.id !== c.id); }); goTo("conteudos"); }}>→ Pauta</button>
             </div>
           </div>
         ))}
@@ -596,165 +683,463 @@ function AnotacoesScreen({ data, update, notaParaAbrir, onNotaAberta }) {
   );
 }
 
-// ============ Kanban ============
-function KanbanScreen({ data, update }) {
-  const colunas = data.kanban.colunas;
-  const [drag, setDrag] = useState(null);
-  const [alvo, setAlvo] = useState(null);
-  const alvoRef = useRef(null);
+// ============ Vida Pessoal: Contas + Tarefas ============
+function ContasModulo({ data, update, today }) {
+  const [tipo, setTipo] = useState("saida");
+  const [mes, setMes] = useState(today.slice(0, 7));
+  const [erroAdd, setErroAdd] = useState("");
+  const [tagsAberto, setTagsAberto] = useState(false);
 
-  const iniciarDrag = (e, card, colId) => {
-    const tag = e.target.tagName;
-    if (["INPUT","TEXTAREA","SELECT","BUTTON"].includes(tag)) return;
-    if (e.pointerType === "mouse" && e.button !== 0) return;
-    const isTouch = e.pointerType !== "mouse";
-    const startX = e.clientX, startY = e.clientY;
-    let ativo = false, timer = null;
+  const contas = data.contas || { lancamentos: [], tagsCustom: [] };
+  const tagsCustom = contas.tagsCustom || [];
+  const todasTags = [...TAGS_BASE.map((t) => t.nome), ...tagsCustom.map((t) => t.nome), "Outros"];
 
-    const atualizarAlvo = (x, y) => {
-      const el = document.elementFromPoint(x, y);
-      const colEl = el && el.closest ? el.closest("[data-col]") : null;
-      if (!colEl) { alvoRef.current = null; setAlvo(null); return; }
-      const colIdAlvo = colEl.getAttribute("data-col");
-      const cardsEls = colEl.querySelectorAll("[data-card]");
-      let index = cardsEls.length;
-      for (let i = 0; i < cardsEls.length; i++) { const r = cardsEls[i].getBoundingClientRect(); if (y < r.top + r.height / 2) { index = i; break; } }
-      const novo = { colId: colIdAlvo, index };
-      alvoRef.current = novo; setAlvo(novo);
-    };
+  const lanc = (contas.lancamentos || []).filter((l) => (l.data || "").startsWith(mes));
+  const saidas = lanc.filter((l) => l.tipo !== "entrada");
+  const entradas = lanc.filter((l) => l.tipo === "entrada");
+  const totalS = saidas.reduce((s, l) => s + (l.valor || 0), 0);
+  const totalE = entradas.reduce((s, l) => s + (l.valor || 0), 0);
 
-    const ativar = (x, y) => { ativo = true; setDrag({ cardId: card.id, texto: card.texto, x, y }); atualizarAlvo(x, y); document.body.style.userSelect = "none"; };
-    const bloquearScroll = (ev) => { if (ativo) ev.preventDefault(); };
+  const porTag = {};
+  saidas.forEach((l) => { porTag[l.tag] = (porTag[l.tag] || 0) + (l.valor || 0); });
+  const tagsOrdenadas = Object.entries(porTag).sort((a, b) => b[1] - a[1]);
+  const maxTag = tagsOrdenadas.length ? tagsOrdenadas[0][1] : 0;
 
-    const encerrar = (soltar) => {
-      clearTimeout(timer);
-      window.removeEventListener("pointermove", onMove); window.removeEventListener("pointerup", onUp); window.removeEventListener("pointercancel", onCancel); window.removeEventListener("touchmove", bloquearScroll);
-      document.body.style.userSelect = "";
-      if (ativo) { const cc = (ev) => { ev.stopPropagation(); ev.preventDefault(); }; window.addEventListener("click", cc, true); setTimeout(() => window.removeEventListener("click", cc, true), 80); }
-      if (soltar && ativo && alvoRef.current) {
-        const dest = alvoRef.current;
-        update((d) => {
-          const origem = d.kanban.colunas.find((c) => c.id === colId); if (!origem) return;
-          const i = origem.cards.findIndex((k) => k.id === card.id); if (i < 0) return;
-          const destino = d.kanban.colunas.find((c) => c.id === dest.colId); if (!destino) return;
-          const [mov] = origem.cards.splice(i, 1);
-          let idx = dest.index; if (destino.id === origem.id && i < idx) idx -= 1; if (idx > destino.cards.length) idx = destino.cards.length;
-          destino.cards.splice(idx, 0, mov);
-        });
-      }
-      alvoRef.current = null; setDrag(null); setAlvo(null);
-    };
-
-    const onMove = (ev) => {
-      const x = ev.clientX, y = ev.clientY;
-      if (!ativo) { const dist = Math.hypot(x - startX, y - startY); if (isTouch) { if (dist > 12) encerrar(false); return; } if (dist > 5) ativar(x, y); return; }
-      setDrag((dr) => dr ? { ...dr, x, y } : dr); atualizarAlvo(x, y);
-    };
-
-    window.addEventListener("pointermove", onMove); window.addEventListener("pointerup", () => encerrar(true)); window.addEventListener("pointercancel", () => encerrar(false)); window.addEventListener("touchmove", bloquearScroll, { passive: false });
-    if (isTouch) timer = setTimeout(() => ativar(startX, startY), 250);
+  const mudarMes = (delta) => {
+    const [y, m] = mes.split("-").map(Number);
+    const d = new Date(y, m - 1 + delta, 1);
+    setMes(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
   };
+  const mesLabel = (() => { const [y, m] = mes.split("-").map(Number); return new Date(y, m - 1, 1).toLocaleDateString("pt-BR", { month: "long", year: "numeric" }); })();
 
-  const Indicador = () => <div className="h-2 rounded-full my-1" style={{ backgroundColor: AMARELO }}></div>;
+  const adicionar = (t) => {
+    const p = parseLancamento(t);
+    if (!p) { setErroAdd('Não achei o valor. Escreve tipo: "Uber 50" ou "60 ifood".'); return; }
+    setErroAdd("");
+    const tag = tipo === "entrada" ? "Entrada" : classificarTag(p.descricao, tagsCustom);
+    update((d) => { if (!d.contas) d.contas = { lancamentos: [], tagsCustom: [] }; d.contas.lancamentos.unshift({ id: uid(), descricao: p.descricao, valor: p.valor, tag, tipo, data: hojeStr() }); });
+  };
 
   return (
     <div>
-      <ScreenTitle data={data} update={update} tabKey="kanban" />
-      <div className="flex gap-3 overflow-x-auto pb-4 -mx-4 px-4 items-start">
-        {colunas.map((col) => (
-          <div key={col.id} data-col={col.id} className="w-72 flex-shrink-0 rounded-2xl p-3" style={{ backgroundColor: "#EDEDEA" }}>
-            <div className="flex items-center gap-2 mb-2">
-              <div className="flex-1 min-w-0"><EditableText value={col.nome} onSave={(v) => update((d) => { const a = d.kanban.colunas.find((c) => c.id === col.id); if (a) a.nome = v; })} className="text-base font-black text-gray-800" /></div>
-              <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ backgroundColor: PRETO, color: AMARELO }}>{col.cards.length}</span>
-              <ConfirmButton confirmLabel="Apagar coluna?" onConfirm={() => update((d) => { const a = d.kanban.colunas.find((c) => c.id === col.id); if (a) jogarNaLixeira(d, "coluna", a); d.kanban.colunas = d.kanban.colunas.filter((c) => c.id !== col.id); })} />
+      {/* Adicionar */}
+      <div className="mb-2 flex gap-2">
+        <button onClick={() => setTipo("saida")} className={"text-sm px-3.5 py-2 rounded-xl font-bold " + (tipo === "saida" ? "text-white" : "bg-white border border-gray-200 text-gray-600")} style={tipo === "saida" ? { backgroundColor: "#C0392B" } : {}}>Gasto</button>
+        <button onClick={() => setTipo("entrada")} className={"text-sm px-3.5 py-2 rounded-xl font-bold " + (tipo === "entrada" ? "text-white" : "bg-white border border-gray-200 text-gray-600")} style={tipo === "entrada" ? { backgroundColor: COR_ENTRADA } : {}}>Entrada</button>
+      </div>
+      <AddInput placeholder={tipo === "saida" ? 'Ex.: "Uber 50" ou "60 ifood"' : 'Ex.: "salário 3000"'} buttonLabel="+" onAdd={adicionar} />
+      {erroAdd && <p className="text-xs text-red-600 mt-1 px-1">{erroAdd}</p>}
+      <p className="text-xs text-gray-400 mt-1.5 px-1 mb-4">Escreve do seu jeito que eu coloco a tag certa sozinho.</p>
+
+      {/* Navegação de mês + resumo */}
+      <div className="flex items-center justify-between mb-3">
+        <button onClick={() => mudarMes(-1)} className="w-9 h-9 rounded-xl bg-white border border-gray-200 text-gray-600 font-bold">‹</button>
+        <span className="text-base font-black text-gray-900 capitalize">{mesLabel}</span>
+        <button onClick={() => mudarMes(1)} className="w-9 h-9 rounded-xl bg-white border border-gray-200 text-gray-600 font-bold">›</button>
+      </div>
+      <div className="grid grid-cols-3 gap-2 mb-4">
+        <Card className="px-3 py-3 text-center">
+          <p className="text-xs text-gray-400 font-bold">Entradas</p>
+          <p className="text-sm font-black mt-0.5" style={{ color: COR_ENTRADA }}>{fmtDinheiro(totalE)}</p>
+        </Card>
+        <Card className="px-3 py-3 text-center">
+          <p className="text-xs text-gray-400 font-bold">Saídas</p>
+          <p className="text-sm font-black mt-0.5 text-red-600">{fmtDinheiro(totalS)}</p>
+        </Card>
+        <Card className="px-3 py-3 text-center" style={{ backgroundColor: PRETO, borderColor: PRETO }}>
+          <p className="text-xs font-bold" style={{ color: "#999" }}>Saldo</p>
+          <p className="text-sm font-black mt-0.5" style={{ color: totalE - totalS >= 0 ? AMARELO : "#FF6B6B" }}>{fmtDinheiro(totalE - totalS)}</p>
+        </Card>
+      </div>
+
+      {/* Gráfico por tag */}
+      {tagsOrdenadas.length > 0 && (
+        <div className="mb-4">
+          <h3 className="text-sm font-black text-gray-500 uppercase tracking-wide mb-2 px-1">Pra onde foi o dinheiro</h3>
+          <Card className="p-4 space-y-3">
+            {tagsOrdenadas.map(([tag, valor]) => (
+              <div key={tag}>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-sm font-bold text-gray-900 flex items-center gap-1.5">
+                    <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: corDaTag(tag, tagsCustom) }}></span>
+                    {tag}
+                  </span>
+                  <span className="text-sm font-black text-gray-900">{fmtDinheiro(valor)}</span>
+                </div>
+                <div className="h-2.5 rounded-full bg-gray-100 overflow-hidden">
+                  <div className="h-full rounded-full" style={{ width: `${maxTag ? Math.max(4, (valor / maxTag) * 100) : 0}%`, backgroundColor: corDaTag(tag, tagsCustom) }}></div>
+                </div>
+              </div>
+            ))}
+          </Card>
+        </div>
+      )}
+
+      {/* Lançamentos */}
+      <h3 className="text-sm font-black text-gray-500 uppercase tracking-wide mb-2 px-1">Lançamentos</h3>
+      <Card className="divide-y divide-gray-100 mb-4">
+        {lanc.length === 0 && <Vazio texto="Nenhum lançamento nesse mês." />}
+        {lanc.map((l) => (
+          <div key={l.id} className="px-4 py-3">
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: corDaTag(l.tag, tagsCustom) }}></span>
+              <div className="flex-1 min-w-0">
+                <EditableText value={l.descricao} onSave={(v) => update((d) => { const a = d.contas.lancamentos.find((x) => x.id === l.id); if (a) a.descricao = v; })} className="text-base text-gray-900 font-medium" />
+              </div>
+              <span className={"text-base font-black flex-shrink-0 " + (l.tipo === "entrada" ? "" : "text-red-600")} style={l.tipo === "entrada" ? { color: COR_ENTRADA } : {}}>
+                {l.tipo === "entrada" ? "+" : "−"}{fmtDinheiro(l.valor)}
+              </span>
+              <ConfirmButton onConfirm={() => update((d) => { const a = d.contas.lancamentos.find((x) => x.id === l.id); if (a) jogarNaLixeira(d, "lancamento", a); d.contas.lancamentos = d.contas.lancamentos.filter((x) => x.id !== l.id); })} />
             </div>
-            <div className="mb-2" style={{ minHeight: 24 }}>
-              {col.cards.map((card, idx) => (
-                <React.Fragment key={card.id}>
-                  {alvo && alvo.colId === col.id && alvo.index === idx && <Indicador />}
-                  <div data-card onPointerDown={(e) => iniciarDrag(e, card, col.id)}
-                    className={"bg-white rounded-xl px-3.5 py-3 border border-gray-200 shadow-sm mb-2 " + (drag && drag.cardId === card.id ? "opacity-30" : "")}
-                    style={{ cursor: "grab" }}>
-                    <div className="flex items-start gap-2">
-                      <div className="flex-1 min-w-0"><EditableText value={card.texto} onSave={(v) => update((d) => { const c = d.kanban.colunas.find((x) => x.id === col.id); const a = c && c.cards.find((k) => k.id === card.id); if (a) a.texto = v; })} className="text-base text-gray-900 font-medium block" /></div>
-                      <ConfirmButton onConfirm={() => update((d) => { const c = d.kanban.colunas.find((x) => x.id === col.id); if (c) { const a = c.cards.find((k) => k.id === card.id); if (a) jogarNaLixeira(d, "card", a, { coluna: col.nome }); c.cards = c.cards.filter((k) => k.id !== card.id); } })} />
-                    </div>
-                  </div>
-                </React.Fragment>
-              ))}
-              {alvo && alvo.colId === col.id && alvo.index === col.cards.length && <Indicador />}
+            <div className="flex items-center gap-2 mt-1.5 ml-4">
+              <select value={l.tag} onChange={(e) => update((d) => { const a = d.contas.lancamentos.find((x) => x.id === l.id); if (a) a.tag = e.target.value; })}
+                className="text-xs bg-gray-100 rounded-lg px-2 py-1 outline-none text-gray-600 font-medium">
+                {[...todasTags, "Entrada"].map((t) => <option key={t} value={t}>{t}</option>)}
+              </select>
+              <input type="date" value={l.data || ""} onChange={(e) => update((d) => { const a = d.contas.lancamentos.find((x) => x.id === l.id); if (a) a.data = e.target.value; })}
+                className="text-xs bg-gray-100 rounded-lg px-2 py-1 outline-none text-gray-600 w-28" />
             </div>
-            <AddInput placeholder="Novo card…" buttonLabel="+" onAdd={(t) => update((d) => { const c = d.kanban.colunas.find((x) => x.id === col.id); if (c) c.cards.push({ id: uid(), texto: t }); })} />
           </div>
         ))}
-        <button onClick={() => update((d) => { d.kanban.colunas.push({ id: uid(), nome: "Nova coluna", cards: [] }); })}
-          className="w-40 flex-shrink-0 rounded-2xl border-2 border-dashed border-gray-300 text-gray-400 text-base font-bold py-6 self-start">+ Coluna</button>
-      </div>
-      <p className="text-xs text-gray-400 px-1">Celular: segure o card e arraste. Computador: clique e arraste.</p>
-      {drag && (
-        <div className="fixed z-50 pointer-events-none bg-white rounded-xl px-3.5 py-3 border-2 shadow-xl text-base font-medium text-gray-900"
-          style={{ left: drag.x, top: drag.y, width: 250, transform: "translate(-50%,-50%) rotate(2deg)", borderColor: AMARELO }}>{drag.texto}</div>
+      </Card>
+
+      {/* Tags personalizadas */}
+      <button onClick={() => setTagsAberto(!tagsAberto)} className="w-full py-2.5 rounded-xl text-sm font-bold bg-white border border-gray-200 text-gray-600 mb-2">
+        {tagsAberto ? "Fechar tags" : "Gerenciar tags"}
+      </button>
+      {tagsAberto && (
+        <Card className="p-4">
+          <div className="flex flex-wrap gap-2 mb-3">
+            {TAGS_BASE.map((t) => (
+              <span key={t.nome} className="text-xs px-2.5 py-1 rounded-full font-bold bg-gray-100 text-gray-700 flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: t.cor }}></span>{t.nome}
+              </span>
+            ))}
+            {tagsCustom.map((t) => (
+              <span key={t.id} className="text-xs px-2.5 py-1 rounded-full font-bold bg-gray-100 text-gray-700 flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: t.cor }}></span>{t.nome}
+                <button onClick={() => update((d) => { d.contas.tagsCustom = d.contas.tagsCustom.filter((x) => x.id !== t.id); })} className="text-gray-400">✕</button>
+              </span>
+            ))}
+          </div>
+          <AddInput placeholder="Nova tag (ex.: Academia)…" buttonLabel="+"
+            onAdd={(t) => update((d) => { if (!d.contas.tagsCustom) d.contas.tagsCustom = []; d.contas.tagsCustom.push({ id: uid(), nome: t, cor: PALETA_TAGS[d.contas.tagsCustom.length % PALETA_TAGS.length], palavras: [normalizar(t)] }); })} />
+        </Card>
       )}
     </div>
   );
 }
 
-// ============ Vida Pessoal ============
 function PessoalScreen({ data, update, today }) {
+  const [sub, setSub] = useState("contas");
+  const tarefas = data.pessoal.tarefas || [];
   return (
     <div>
       <ScreenTitle data={data} update={update} tabKey="pessoal" />
-      <div className="mb-4"><AddInput placeholder="Nova tarefa pessoal…" onAdd={(t) => update((d) => { d.pessoal.tarefas.unshift({ id: uid(), texto: t, prazo: "", feito: false }); })} /></div>
-      <Card className="divide-y divide-gray-100">
-        {(data.pessoal.tarefas || []).length === 0 && <Vazio texto="Nada pessoal pendente." />}
-        {(data.pessoal.tarefas || []).map((t) => (
-          <div key={t.id} className="flex items-center gap-3 px-4 py-3.5">
-            <Check checked={!!t.feito} onChange={() => update((d) => { const a = d.pessoal.tarefas.find((x) => x.id === t.id); if (a) a.feito = !a.feito; })} />
-            <div className="flex-1 min-w-0">
-              <EditableText value={t.texto} onSave={(v) => update((d) => { const a = d.pessoal.tarefas.find((x) => x.id === t.id); if (a) a.texto = v; })}
-                className={"text-base " + (t.feito ? "text-gray-400 line-through" : "text-gray-900 font-medium")} />
-              {t.prazo && t.prazo < today && !t.feito && <span className="text-xs text-red-600 font-bold ml-1">· atrasada</span>}
-              {t.prazo === today && !t.feito && <span className="text-xs font-bold ml-1" style={{ color: AMARELO_TEXTO }}>· hoje</span>}
-            </div>
-            <input type="date" value={t.prazo || ""} onChange={(e) => update((d) => { const a = d.pessoal.tarefas.find((x) => x.id === t.id); if (a) a.prazo = e.target.value; })}
-              className="bg-gray-100 rounded-lg px-1.5 py-1.5 text-xs text-gray-600 outline-none w-28 flex-shrink-0" />
-            <ConfirmButton onConfirm={() => update((d) => { const a = d.pessoal.tarefas.find((x) => x.id === t.id); if (a) jogarNaLixeira(d, "tarefaPessoal", a); d.pessoal.tarefas = d.pessoal.tarefas.filter((x) => x.id !== t.id); })} />
-          </div>
-        ))}
-      </Card>
-    </div>
-  );
-}
-
-// ============ Contas ============
-function ContasScreen({ data, update }) {
-  return (
-    <div>
-      <ScreenTitle data={data} update={update} tabKey="contas" />
-      <Card className="px-5 py-6">
-        <span className="text-xs font-black px-2.5 py-1 rounded-full" style={{ backgroundColor: AMARELO, color: PRETO }}>EM CONSTRUÇÃO</span>
-        <p className="text-base text-gray-900 font-bold mt-3">O que vai morar aqui:</p>
-        <ul className="text-sm text-gray-500 mt-2 space-y-1.5">
-          <li>· Entradas e saídas de dinheiro</li>
-          <li>· Digitação rápida: "50 reais Uber" cai na categoria certa</li>
-          <li>· Tags coloridas automáticas + criar as suas</li>
-          <li>· Gráfico mostrando pra onde o dinheiro está indo</li>
-          <li>· Visão dos seus dois cartões de crédito, somados</li>
-        </ul>
-      </Card>
+      <div className="flex gap-2 mb-4">
+        <ChipFiltro ativo={sub === "contas"} onClick={() => setSub("contas")}>Contas</ChipFiltro>
+        <ChipFiltro ativo={sub === "tarefas"} onClick={() => setSub("tarefas")}>Tarefas</ChipFiltro>
+      </div>
+      {sub === "contas" && <ContasModulo data={data} update={update} today={today} />}
+      {sub === "tarefas" && (
+        <div>
+          <div className="mb-4"><AddInput placeholder="Nova tarefa pessoal…" onAdd={(t) => update((d) => { d.pessoal.tarefas.unshift({ id: uid(), texto: t, prazo: "", feito: false }); })} /></div>
+          <Card className="divide-y divide-gray-100">
+            {tarefas.length === 0 && <Vazio texto="Nada pessoal pendente." />}
+            {tarefas.map((t) => (
+              <div key={t.id} className="flex items-center gap-3 px-4 py-3.5">
+                <Check checked={!!t.feito} onChange={() => update((d) => { const a = d.pessoal.tarefas.find((x) => x.id === t.id); if (a) a.feito = !a.feito; })} />
+                <div className="flex-1 min-w-0">
+                  <EditableText value={t.texto} onSave={(v) => update((d) => { const a = d.pessoal.tarefas.find((x) => x.id === t.id); if (a) a.texto = v; })}
+                    className={"text-base " + (t.feito ? "text-gray-400 line-through" : "text-gray-900 font-medium")} />
+                  {t.prazo && t.prazo < today && !t.feito && <span className="text-xs text-red-600 font-bold ml-1">· atrasada</span>}
+                </div>
+                <input type="date" value={t.prazo || ""} onChange={(e) => update((d) => { const a = d.pessoal.tarefas.find((x) => x.id === t.id); if (a) a.prazo = e.target.value; })}
+                  className="bg-gray-100 rounded-lg px-1.5 py-1.5 text-xs text-gray-600 outline-none w-28 flex-shrink-0" />
+                <ConfirmButton onConfirm={() => update((d) => { const a = d.pessoal.tarefas.find((x) => x.id === t.id); if (a) jogarNaLixeira(d, "tarefaPessoal", a); d.pessoal.tarefas = d.pessoal.tarefas.filter((x) => x.id !== t.id); })} />
+              </div>
+            ))}
+          </Card>
+        </div>
+      )}
     </div>
   );
 }
 
 // ============ Conteúdos ============
-function ConteudosScreen({ data, update }) {
+// Sincroniza a demanda ligada a um conteúdo (criação/atualização/remoção automática)
+const sincronizarDemandaDeConteudo = (d, c) => {
+  if (c.pessoaId) {
+    let dem = c.demandaId ? d.demandas.find((x) => x.id === c.demandaId) : null;
+    if (!dem) {
+      dem = { id: uid(), titulo: "Conteúdo: " + c.titulo, prazo: c.prazo || "", prioridade: c.urgencia || "media", status: "afazer", pessoaId: c.pessoaId, deConteudo: c.id };
+      d.demandas.unshift(dem);
+      c.demandaId = dem.id;
+    } else {
+      dem.titulo = "Conteúdo: " + c.titulo;
+      dem.prazo = c.prazo || "";
+      dem.prioridade = c.urgencia || "media";
+      dem.pessoaId = c.pessoaId;
+    }
+    if (c.status === "noar") dem.status = "feito";
+  } else if (c.demandaId) {
+    d.demandas = d.demandas.filter((x) => x.id !== c.demandaId);
+    c.demandaId = null;
+  }
+};
+
+function ConteudoItem({ c, data, update, expandida, onToggle, today, amanha }) {
+  const pessoa = data.pessoas.find((p) => p.id === c.pessoaId);
+  const et = ETAPAS[c.status] || ETAPAS.ideia;
+  const ur = PRIORIDADES[c.urgencia] || PRIORIDADES.media;
+  const atrasado = c.prazo && c.prazo < today && c.status !== "noar";
+
+  const setCampo = (campo, valor) => update((dt) => {
+    const a = dt.conteudos.itens.find((x) => x.id === c.id);
+    if (!a) return;
+    a[campo] = valor;
+    sincronizarDemandaDeConteudo(dt, a);
+  });
+
+  let chipPrazo = null;
+  if (c.prazo) {
+    if (atrasado) chipPrazo = <span className="text-xs px-2.5 py-1 rounded-full bg-red-50 text-red-600 font-bold">Atrasado · {fmtData(c.prazo)}</span>;
+    else if (c.prazo === today) chipPrazo = <span className="text-xs px-2.5 py-1 rounded-full font-bold" style={{ backgroundColor: AMARELO, color: PRETO }}>Hoje</span>;
+    else if (c.prazo === amanha) chipPrazo = <span className="text-xs px-2.5 py-1 rounded-full font-bold" style={{ backgroundColor: AMARELO_CLARO, color: AMARELO_TEXTO }}>Amanhã</span>;
+    else chipPrazo = <span className="text-xs px-2.5 py-1 rounded-full bg-gray-100 text-gray-500 font-medium">{fmtData(c.prazo)}</span>;
+  }
+
+  return (
+    <div className="px-4 py-3.5">
+      <div className="flex items-start gap-3">
+        <div className="flex-1 min-w-0" onClick={onToggle}>
+          <div className={"text-base leading-snug " + (c.status === "noar" ? "text-gray-400" : "text-gray-900 font-medium")}>{c.titulo}</div>
+          <div className="flex flex-wrap items-center gap-1.5 mt-2">
+            <span className="text-xs px-2.5 py-1 rounded-full font-bold" style={{ backgroundColor: et.bg, color: et.fg }}>{et.label}</span>
+            {c.formato && <span className="text-xs px-2.5 py-1 rounded-full font-bold text-white" style={{ backgroundColor: "#444" }}>{FORMATOS[c.formato] || c.formato}</span>}
+            {c.editoria && (
+              <span className="text-xs px-2.5 py-1 rounded-full font-bold bg-gray-100 text-gray-700 flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full inline-block" style={{ backgroundColor: corDaEditoria(c.editoria) }}></span>
+                {c.editoria}
+              </span>
+            )}
+            {chipPrazo}
+            <span className="text-xs px-2.5 py-1 rounded-full font-bold" style={{ backgroundColor: ur.bg, color: ur.fg }}>{ur.label}</span>
+            {pessoa && <span className="text-xs px-2.5 py-1 rounded-full font-bold text-white" style={{ backgroundColor: PRETO }}>{pessoa.nome}</span>}
+            {c.link && <a href={c.link} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="text-xs px-2.5 py-1 rounded-full font-bold" style={{ backgroundColor: AMARELO_CLARO, color: AMARELO_TEXTO }}>link ↗</a>}
+          </div>
+        </div>
+        <button onClick={onToggle} className="text-gray-300 text-base px-1 flex-shrink-0">{expandida ? "▴" : "▾"}</button>
+      </div>
+
+      {expandida && (
+        <div className="mt-3 space-y-3">
+          <div>
+            <label className="text-xs font-semibold text-gray-500 block mb-1">Título</label>
+            <EditableText value={c.titulo} onSave={(v) => setCampo("titulo", v)} className="text-base text-gray-900 block bg-gray-50 rounded-lg px-2.5 py-2" />
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-gray-500 block mb-1">Descrição</label>
+            <textarea value={c.descricao || ""} onChange={(e) => setCampo("descricao", e.target.value)} placeholder="Descreve a ideia, o roteiro, a referência…"
+              className="w-full bg-gray-50 rounded-lg px-2.5 py-2 text-base text-gray-900 outline-none resize-none" rows={3} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-semibold text-gray-500 block mb-1">Formato</label>
+              <select value={c.formato || "card"} onChange={(e) => setCampo("formato", e.target.value)} className="w-full bg-gray-100 rounded-lg px-2 py-2 text-sm outline-none">
+                {Object.entries(FORMATOS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-gray-500 block mb-1">Editoria</label>
+              <select value={c.editoria || "Outros"} onChange={(e) => setCampo("editoria", e.target.value)} className="w-full bg-gray-100 rounded-lg px-2 py-2 text-sm outline-none">
+                {EDITORIAS.map((e2) => <option key={e2} value={e2}>{e2}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-gray-500 block mb-1">Etapa</label>
+              <select value={c.status || "ideia"} onChange={(e) => setCampo("status", e.target.value)} className="w-full bg-gray-100 rounded-lg px-2 py-2 text-sm outline-none">
+                {Object.entries(ETAPAS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-gray-500 block mb-1">Urgência</label>
+              <select value={c.urgencia || "media"} onChange={(e) => setCampo("urgencia", e.target.value)} className="w-full bg-gray-100 rounded-lg px-2 py-2 text-sm outline-none">
+                {Object.entries(PRIORIDADES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-gray-500 block mb-1">Prazo</label>
+              <input type="date" value={c.prazo || ""} onChange={(e) => setCampo("prazo", e.target.value)} className="w-full bg-gray-100 rounded-lg px-2 py-1.5 text-sm outline-none" />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-gray-500 block mb-1">Demandar para</label>
+              <select value={c.pessoaId || ""} onChange={(e) => setCampo("pessoaId", e.target.value || null)} className="w-full bg-gray-100 rounded-lg px-2 py-2 text-sm outline-none">
+                <option value="">Ninguém</option>
+                {data.pessoas.map((p) => <option key={p.id} value={p.id}>{p.nome}</option>)}
+              </select>
+            </div>
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-gray-500 block mb-1">Link</label>
+            <input type="url" value={c.link || ""} onChange={(e) => setCampo("link", e.target.value)} placeholder="https://…"
+              className="w-full bg-gray-100 rounded-lg px-2.5 py-2 text-sm outline-none" />
+          </div>
+          {c.pessoaId && <p className="text-xs text-gray-400">Esse conteúdo vira demanda automática pra {pessoa ? pessoa.nome : "a pessoa"} — aparece em Pessoas e em Demandas › Pessoas. Quando marcar "No ar", a demanda fecha sozinha.</p>}
+          <div className="flex justify-end">
+            <ConfirmButton label="Apagar conteúdo" confirmLabel="Confirmar exclusão"
+              className="text-xs font-semibold text-red-500 px-2.5 py-1.5 rounded-lg hover:bg-red-50"
+              onConfirm={() => update((dt) => {
+                const a = dt.conteudos.itens.find((x) => x.id === c.id);
+                if (a) {
+                  jogarNaLixeira(dt, "conteudo", a);
+                  if (a.demandaId) dt.demandas = dt.demandas.filter((x) => x.id !== a.demandaId);
+                }
+                dt.conteudos.itens = dt.conteudos.itens.filter((x) => x.id !== c.id);
+              })} />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DatasChave({ data, update, today }) {
+  const datas = [...(data.conteudos.datas || [])].sort((a, b) => (a.data || "").localeCompare(b.data || ""));
+  return (
+    <Card className="p-4 mb-4" style={{ borderColor: AMARELO, borderWidth: 2 }}>
+      <h3 className="text-sm font-black text-gray-900 uppercase tracking-wide mb-2">📅 Datas-chave</h3>
+      {datas.length === 0 && <p className="text-sm text-gray-400 mb-2">Datas que não podem passar — eventos, sessões, datas comemorativas que rendem conteúdo.</p>}
+      {datas.map((dt) => {
+        const dias = dt.data ? diasAte(dt.data) : null;
+        const passou = dias !== null && dias < 0;
+        const urgente = dias !== null && dias >= 0 && dias <= 3;
+        return (
+          <div key={dt.id} className="flex items-center gap-2.5 py-2">
+            <div className="flex-1 min-w-0">
+              <EditableText value={dt.titulo} onSave={(v) => update((d) => { const a = d.conteudos.datas.find((x) => x.id === dt.id); if (a) a.titulo = v; })}
+                className={"text-base font-medium " + (passou ? "text-gray-400 line-through" : "text-gray-900")} />
+            </div>
+            {dt.data && (
+              <span className={"text-xs px-2.5 py-1 rounded-full font-bold flex-shrink-0 " + (passou ? "bg-gray-100 text-gray-400" : urgente ? "bg-red-50 text-red-600" : "bg-gray-100 text-gray-600")}>
+                {fmtData(dt.data)}{!passou && dias !== null ? (dias === 0 ? " · hoje!" : ` · faltam ${dias}d`) : ""}
+              </span>
+            )}
+            <input type="date" value={dt.data || ""} onChange={(e) => update((d) => { const a = d.conteudos.datas.find((x) => x.id === dt.id); if (a) a.data = e.target.value; })}
+              className="bg-gray-100 rounded-lg px-1 py-1 text-xs text-gray-600 outline-none w-10 flex-shrink-0" style={{ width: 34 }} title="Mudar a data" />
+            <ConfirmButton onConfirm={() => update((d) => { const a = d.conteudos.datas.find((x) => x.id === dt.id); if (a) jogarNaLixeira(d, "dataChave", a); d.conteudos.datas = d.conteudos.datas.filter((x) => x.id !== dt.id); })} />
+          </div>
+        );
+      })}
+      <div className="mt-2">
+        <AddInput placeholder="Ex.: Aniversário da cidade" buttonLabel="+"
+          onAdd={(t) => update((d) => { d.conteudos.datas.push({ id: uid(), titulo: t, data: "" }); })} />
+        <p className="text-xs text-gray-400 mt-1.5">Adiciona o nome e depois toca no campo pequeno pra escolher a data.</p>
+      </div>
+    </Card>
+  );
+}
+
+function ConteudosScreen({ data, update, today, amanha }) {
+  const [sub, setSub] = useState("conteudos");
+  const [filtroEtapa, setFiltroEtapa] = useState("ativos");
+  const [filtroEditoria, setFiltroEditoria] = useState("");
+  const [expandida, setExpandida] = useState(null);
+  const [datasAberto, setDatasAberto] = useState(false);
+
+  const itens = data.conteudos.itens || [];
+  const pautas = data.conteudos.pautas || [];
+
+  let lista = [...itens];
+  if (filtroEtapa === "ativos") lista = lista.filter((c) => c.status !== "noar");
+  else if (filtroEtapa !== "todos") lista = lista.filter((c) => c.status === filtroEtapa);
+  if (filtroEditoria) lista = lista.filter((c) => c.editoria === filtroEditoria);
+  lista.sort((a, b) => (a.prazo || "9999") < (b.prazo || "9999") ? -1 : 1);
+
+  const proximaData = [...(data.conteudos.datas || [])].filter((d) => d.data && d.data >= today).sort((a, b) => a.data.localeCompare(b.data))[0];
+
   return (
     <div>
-      <ScreenTitle data={data} update={update} tabKey="conteudos" />
-      <Card className="px-5 py-8 text-center">
-        <p className="text-base text-gray-900 font-bold">Aba reservada</p>
-        <p className="text-sm text-gray-400 mt-1">Você disse que vai me passar o que entra aqui.</p>
-      </Card>
+      <div className="mb-4 flex items-center gap-3">
+        <span className="w-1.5 h-7 rounded-full flex-shrink-0" style={{ backgroundColor: AMARELO }}></span>
+        <div className="flex-1 min-w-0">
+          <EditableText value={data.tabNames.conteudos} onSave={(v) => update((d) => { d.tabNames.conteudos = v; })}
+            className="text-2xl font-black text-gray-900 tracking-tight" />
+        </div>
+        <button onClick={() => setDatasAberto(!datasAberto)} title="Datas-chave"
+          className="w-11 h-11 rounded-xl border-2 flex items-center justify-center text-lg flex-shrink-0 relative"
+          style={{ borderColor: AMARELO, backgroundColor: datasAberto ? AMARELO : "#FFF" }}>
+          📅
+          {proximaData && diasAte(proximaData.data) <= 3 && <span className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-red-500"></span>}
+        </button>
+      </div>
+
+      {datasAberto && <DatasChave data={data} update={update} today={today} />}
+
+      <div className="flex gap-2 mb-4">
+        <ChipFiltro ativo={sub === "conteudos"} onClick={() => setSub("conteudos")}>Conteúdos{itens.filter((c) => c.status !== "noar").length > 0 ? ` · ${itens.filter((c) => c.status !== "noar").length}` : ""}</ChipFiltro>
+        <ChipFiltro ativo={sub === "pautas"} onClick={() => setSub("pautas")}>Pautas{pautas.length > 0 ? ` · ${pautas.length}` : ""}</ChipFiltro>
+      </div>
+
+      {sub === "conteudos" && (
+        <div>
+          <div className="mb-3">
+            <AddInput placeholder="Novo conteúdo (título)…"
+              onAdd={(t) => update((d) => { d.conteudos.itens.unshift({ id: uid(), titulo: t, descricao: "", formato: "card", editoria: "Outros", link: "", pessoaId: null, demandaId: null, prazo: "", status: "ideia", urgencia: "media", criadoEm: hojeStr() }); })} />
+            <p className="text-xs text-gray-400 mt-1.5 px-1">Toca no conteúdo pra definir formato, editoria, etapa, prazo, pessoa e link.</p>
+          </div>
+          <div className="flex gap-2 mb-3 overflow-x-auto pb-1">
+            <ChipFiltro ativo={filtroEtapa === "ativos"} onClick={() => setFiltroEtapa("ativos")}>Ativos</ChipFiltro>
+            {Object.entries(ETAPAS).map(([k, v]) => <ChipFiltro key={k} ativo={filtroEtapa === k} onClick={() => setFiltroEtapa(k)}>{v.label}</ChipFiltro>)}
+            <ChipFiltro ativo={filtroEtapa === "todos"} onClick={() => setFiltroEtapa("todos")}>Todos</ChipFiltro>
+            <select value={filtroEditoria} onChange={(e) => setFiltroEditoria(e.target.value)} className="text-sm bg-white border border-gray-200 rounded-xl px-3 py-2 outline-none flex-shrink-0 text-gray-600 font-medium">
+              <option value="">Todas editorias</option>
+              {EDITORIAS.map((e2) => <option key={e2} value={e2}>{e2}</option>)}
+            </select>
+          </div>
+          <Card className="divide-y divide-gray-100">
+            {lista.length === 0 && <Vazio texto="Nenhum conteúdo aqui. O fluxo: pauta → conteúdo → no ar." />}
+            {lista.map((c) => (
+              <ConteudoItem key={c.id} c={c} data={data} update={update} today={today} amanha={amanha}
+                expandida={expandida === c.id} onToggle={() => setExpandida(expandida === c.id ? null : c.id)} />
+            ))}
+          </Card>
+        </div>
+      )}
+
+      {sub === "pautas" && (
+        <div>
+          <div className="mb-3">
+            <AddInput placeholder="Nova pauta / ideia de conteúdo…"
+              onAdd={(t) => update((d) => { d.conteudos.pautas.unshift({ id: uid(), texto: t, editoria: "Outros", link: "", criadoEm: hojeStr() }); })} />
+            <p className="text-xs text-gray-400 mt-1.5 px-1">Seu baú de ideias. Quando uma pauta amadurecer, toca em "→ Conteúdo".</p>
+          </div>
+          <Card className="divide-y divide-gray-100">
+            {pautas.length === 0 && <Vazio texto="Nenhuma pauta guardada." />}
+            {pautas.map((p) => (
+              <div key={p.id} className="px-4 py-3.5">
+                <div className="flex items-start gap-2">
+                  <div className="flex-1 min-w-0">
+                    <EditableText value={p.texto} onSave={(v) => update((d) => { const a = d.conteudos.pautas.find((x) => x.id === p.id); if (a) a.texto = v; })} className="text-base text-gray-900 font-medium" />
+                    <p className="text-xs text-gray-400 mt-0.5">{fmtData(p.criadoEm)}{p.link && <a href={p.link} target="_blank" rel="noreferrer" className="ml-2 font-bold" style={{ color: AMARELO_TEXTO }}>fonte ↗</a>}</p>
+                  </div>
+                  <ConfirmButton onConfirm={() => update((d) => { const a = d.conteudos.pautas.find((x) => x.id === p.id); if (a) jogarNaLixeira(d, "pauta", a); d.conteudos.pautas = d.conteudos.pautas.filter((x) => x.id !== p.id); })} />
+                </div>
+                <div className="flex flex-wrap items-center gap-2 mt-2">
+                  <select value={p.editoria || "Outros"} onChange={(e) => update((d) => { const a = d.conteudos.pautas.find((x) => x.id === p.id); if (a) a.editoria = e.target.value; })}
+                    className="text-xs bg-gray-100 rounded-lg px-2 py-1.5 outline-none text-gray-600 font-medium">
+                    {EDITORIAS.map((e2) => <option key={e2} value={e2}>{e2}</option>)}
+                  </select>
+                  <span className="w-2 h-2 rounded-full" style={{ backgroundColor: corDaEditoria(p.editoria) }}></span>
+                  <div className="flex-1"></div>
+                  <button className="text-xs px-3 py-1.5 rounded-full font-bold" style={{ backgroundColor: AMARELO, color: PRETO }}
+                    onClick={() => { update((d) => { d.conteudos.itens.unshift({ id: uid(), titulo: p.texto, descricao: p.link ? "Fonte: " + p.link : "", formato: "card", editoria: p.editoria || "Outros", link: p.link || "", pessoaId: null, demandaId: null, prazo: "", status: "ideia", urgencia: "media", criadoEm: hojeStr() }); d.conteudos.pautas = d.conteudos.pautas.filter((x) => x.id !== p.id); }); setSub("conteudos"); }}>→ Conteúdo</button>
+                </div>
+              </div>
+            ))}
+          </Card>
+        </div>
+      )}
     </div>
   );
 }
@@ -774,8 +1159,10 @@ function BuscaOverlay({ data, onFechar, onIr }) {
       const plain = htmlParaTexto(n.html || "");
       if (normalizar(plain).includes(nq)) { const linhas = plain.split("\n").map((l) => l.trim()).filter(Boolean); resultados.push({ tab: "anotacoes", label: "Anotações", texto: linhas[0] || "Sem título", extra: fmtData(n.atualizadoEm), notaId: n.id }); }
     });
-    data.kanban.colunas.forEach((c) => { c.cards.forEach((k) => { if (normalizar(k.texto).includes(nq)) resultados.push({ tab: "kanban", label: "Quadro · " + c.nome, texto: k.texto, extra: "" }); }); });
+    (data.conteudos?.itens || []).forEach((c) => { if (normalizar(c.titulo + " " + (c.descricao || "")).includes(nq)) resultados.push({ tab: "conteudos", label: "Conteúdos", texto: c.titulo, extra: ETAPAS[c.status]?.label || "" }); });
+    (data.conteudos?.pautas || []).forEach((p) => { if (normalizar(p.texto).includes(nq)) resultados.push({ tab: "conteudos", label: "Pautas", texto: p.texto, extra: p.editoria || "" }); });
     (data.pessoal.tarefas || []).forEach((t) => { if (normalizar(t.texto).includes(nq)) resultados.push({ tab: "pessoal", label: "Vida Pessoal", texto: t.texto, extra: t.prazo ? fmtData(t.prazo) : "" }); });
+    (data.contas?.lancamentos || []).forEach((l) => { if (normalizar(l.descricao).includes(nq)) resultados.push({ tab: "pessoal", label: "Contas", texto: l.descricao + " · " + fmtDinheiro(l.valor), extra: fmtData(l.data) }); });
     data.capturas.forEach((c) => { if (normalizar(c.texto).includes(nq)) resultados.push({ tab: "captura", label: "Captura", texto: c.texto, extra: "" }); });
     data.lembretes.forEach((l) => { if (normalizar(l.texto).includes(nq)) resultados.push({ tab: "hoje", label: "Funções fixas", texto: l.texto, extra: "" }); });
   }
@@ -807,12 +1194,12 @@ function BuscaOverlay({ data, onFechar, onIr }) {
 }
 
 // ============ Lixeira ============
-const TIPO_LABEL = { demanda:"Demanda", captura:"Captura", anotacao:"Anotação", tarefaPessoal:"Vida Pessoal", funcaoFixa:"Função fixa", pessoaItem:"Pessoa", pessoa:"Pessoa", card:"Quadro", coluna:"Coluna" };
+const TIPO_LABEL = { demanda:"Demanda", captura:"Captura", anotacao:"Anotação", tarefaPessoal:"Vida Pessoal", funcaoFixa:"Função fixa", pessoaItem:"Pessoa", pessoa:"Pessoa", card:"Quadro", coluna:"Coluna", lancamento:"Contas", conteudo:"Conteúdo", pauta:"Pauta", dataChave:"Data-chave" };
 const textoDoLixo = (item) => {
   const p = item.payload || {};
   if (item.tipo === "anotacao") { const plain = htmlParaTexto(p.html || ""); return plain.split("\n").map((l) => l.trim()).filter(Boolean)[0] || "Sem título"; }
-  if (item.tipo === "coluna") return `${p.nome} (${(p.cards||[]).length} cards)`;
-  return p.titulo || p.texto || p.nome || "(sem texto)";
+  if (item.tipo === "lancamento") return (p.descricao || "") + " · " + fmtDinheiro(p.valor);
+  return p.titulo || p.texto || p.nome || p.descricao || "(sem texto)";
 };
 
 function LixeiraOverlay({ data, update, onFechar }) {
@@ -826,8 +1213,12 @@ function LixeiraOverlay({ data, update, onFechar }) {
     else if (item.tipo === "tarefaPessoal") d.pessoal.tarefas.unshift(p);
     else if (item.tipo === "funcaoFixa") d.lembretes.push(p);
     else if (item.tipo === "pessoa") d.pessoas.push(p);
-    else if (item.tipo === "coluna") d.kanban.colunas.push(p);
-    else if (item.tipo === "card") { if (!d.kanban.colunas.length) d.kanban.colunas.push({ id: uid(), nome: "A fazer", cards: [] }); d.kanban.colunas[0].cards.push(p); }
+    else if (item.tipo === "lancamento") d.contas.lancamentos.unshift(p);
+    else if (item.tipo === "conteudo") { p.demandaId = null; d.conteudos.itens.unshift(p); }
+    else if (item.tipo === "pauta") d.conteudos.pautas.unshift(p);
+    else if (item.tipo === "dataChave") d.conteudos.datas.push(p);
+    else if (item.tipo === "card") d.capturas.unshift({ id: uid(), texto: p.texto, criadoEm: hojeStr() });
+    else if (item.tipo === "coluna") (p.cards || []).forEach((k) => d.capturas.unshift({ id: uid(), texto: k.texto, criadoEm: hojeStr() }));
     else if (item.tipo === "pessoaItem") { const pessoa = d.pessoas.find((x) => x.id === (item.extra?.pessoaId)); if (pessoa) pessoa.itens.push(p); else d.capturas.unshift({ id: uid(), texto: p.texto, criadoEm: hojeStr() }); }
   });
   return (
@@ -913,14 +1304,12 @@ export default function App() {
   const today = hojeStr();
   const amanha = amanhaStr();
 
-  // Auth
   useEffect(() => {
     sb.auth.getSession().then(({ data: { session } }) => setSessao(session));
     const { data: { subscription } } = sb.auth.onAuthStateChange((_event, session) => setSessao(session));
     return () => subscription.unsubscribe();
   }, []);
 
-  // Carregar dados quando logar
   useEffect(() => {
     if (!sessao) return;
     setLoaded(false);
@@ -929,13 +1318,20 @@ export default function App() {
         if (dados.pessoas) dados.pessoas.forEach((p) => { if (!p.itens) p.itens = [...(p.devo || []), ...(p.falar || [])]; });
         if (dados.anotacoes) dados.anotacoes.forEach((n) => { if (n.html === undefined) n.html = (n.texto || "").split("\n").map((l) => escapeHtml(l)).join("<br>"); });
         dados.lixeira = (dados.lixeira || []).filter((i) => diasDesde(i.apagadoEm) < DIAS_LIXEIRA);
-        setData({ ...DEFAULT_DATA, ...dados, tabNames: { ...DEFAULT_DATA.tabNames, ...(dados.tabNames || {}) }, lembretesTitulo: dados.lembretesTitulo || DEFAULT_DATA.lembretesTitulo, kanban: dados.kanban?.colunas ? dados.kanban : DEFAULT_DATA.kanban, pessoal: { tarefas: dados.pessoal?.tarefas || [] }, lixeira: dados.lixeira });
+        setData({
+          ...DEFAULT_DATA, ...dados,
+          tabNames: { ...DEFAULT_DATA.tabNames, ...(dados.tabNames || {}) },
+          lembretesTitulo: dados.lembretesTitulo || DEFAULT_DATA.lembretesTitulo,
+          pessoal: { tarefas: dados.pessoal?.tarefas || [] },
+          contas: { lancamentos: dados.contas?.lancamentos || [], tagsCustom: dados.contas?.tagsCustom || [] },
+          conteudos: { itens: dados.conteudos?.itens || [], pautas: dados.conteudos?.pautas || [], datas: dados.conteudos?.datas || [] },
+          lixeira: dados.lixeira,
+        });
       }
       setLoaded(true);
     }).catch(() => setLoaded(true));
   }, [sessao?.user?.id]);
 
-  // Salvar automaticamente
   useEffect(() => {
     if (!loaded || !sessao) return;
     setSaveState("salvando");
@@ -956,7 +1352,6 @@ export default function App() {
     const a = document.createElement("a"); a.href = url; a.download = "backup-koch-" + today + ".json"; a.click(); URL.revokeObjectURL(url);
   };
 
-  // Estados de carregamento e auth
   if (sessao === undefined) return (
     <div className="min-h-screen flex items-center justify-center text-sm font-bold" style={{ backgroundColor: PRETO, color: AMARELO }}>KOCH</div>
   );
@@ -976,10 +1371,8 @@ export default function App() {
     demandas: <DemandasScreen data={data} update={update} today={today} amanha={amanha} />,
     pessoas: <PessoasScreen data={data} update={update} today={today} goTo={setTab} />,
     anotacoes: <AnotacoesScreen data={data} update={update} notaParaAbrir={notaParaAbrir} onNotaAberta={() => setNotaParaAbrir(null)} />,
-    kanban: <KanbanScreen data={data} update={update} />,
     pessoal: <PessoalScreen data={data} update={update} today={today} />,
-    contas: <ContasScreen data={data} update={update} />,
-    conteudos: <ConteudosScreen data={data} update={update} />,
+    conteudos: <ConteudosScreen data={data} update={update} today={today} amanha={amanha} />,
   };
 
   return (
