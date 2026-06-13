@@ -978,10 +978,43 @@ function ContasModulo({ data, update, today }) {
 
 function PessoalScreen({ data, update, today }) {
   const [sub, setSub] = useState("contas");
+  const [desbloqueado, setDesbloqueado] = useState(false);
+  const [pin, setPin] = useState("");
+  const [erroPin, setErroPin] = useState(false);
+  const SENHA = "2807";
+
+  const tentar = () => {
+    if (pin === SENHA) { setDesbloqueado(true); setPin(""); setErroPin(false); }
+    else { setErroPin(true); setPin(""); }
+  };
+
+  if (!desbloqueado) {
+    return (
+      <div>
+        <ScreenTitle data={data} update={update} tabKey="pessoal" />
+        <Card className="p-6 max-w-xs mx-auto mt-6 text-center">
+          <div className="text-3xl mb-2">🔒</div>
+          <p className="text-base font-bold text-gray-900 mb-1">Área privada</p>
+          <p className="text-sm text-gray-400 mb-4">Digite a senha pra ver suas contas e tarefas pessoais.</p>
+          <input type="password" inputMode="numeric" value={pin} autoFocus
+            onChange={(e) => { setPin(e.target.value); setErroPin(false); }}
+            onKeyDown={(e) => { if (e.key === "Enter") tentar(); }}
+            placeholder="• • • •"
+            className="w-full bg-gray-100 rounded-xl px-4 py-3 text-center text-xl tracking-widest outline-none mb-3" />
+          {erroPin && <p className="text-red-600 text-sm mb-3">Senha incorreta.</p>}
+          <button onClick={tentar} className="w-full py-3 rounded-xl text-base font-black active:opacity-80" style={{ backgroundColor: AMARELO, color: PRETO }}>Entrar</button>
+        </Card>
+      </div>
+    );
+  }
+
   const tarefas = data.pessoal.tarefas || [];
   return (
     <div>
-      <ScreenTitle data={data} update={update} tabKey="pessoal" />
+      <div className="flex items-center justify-between">
+        <ScreenTitle data={data} update={update} tabKey="pessoal" />
+        <button onClick={() => setDesbloqueado(false)} className="text-xs font-bold px-2.5 py-1.5 rounded-lg bg-gray-100 text-gray-500 -mt-3 flex-shrink-0">🔒 Bloquear</button>
+      </div>
       <div className="flex gap-2 mb-4">
         <ChipFiltro ativo={sub === "contas"} onClick={() => setSub("contas")}>Contas</ChipFiltro>
         <ChipFiltro ativo={sub === "tarefas"} onClick={() => setSub("tarefas")}>Tarefas</ChipFiltro>
@@ -1359,10 +1392,8 @@ function BuscaOverlay({ data, onFechar, onIr }) {
     });
     (data.conteudos?.itens || []).forEach((c) => { if (normalizar(c.titulo + " " + (c.descricao || "")).includes(nq)) resultados.push({ tab: "conteudos", label: "Conteúdos", texto: c.titulo, extra: ETAPAS[c.status]?.label || "" }); });
     (data.conteudos?.pautas || []).forEach((p) => { if (normalizar(p.texto).includes(nq)) resultados.push({ tab: "conteudos", label: "Pautas", texto: p.texto, extra: p.editoria || "" }); });
-    (data.pessoal.tarefas || []).forEach((t) => { if (normalizar(t.texto).includes(nq)) resultados.push({ tab: "pessoal", label: "Vida Pessoal", texto: t.texto, extra: t.prazo ? fmtData(t.prazo) : "" }); });
-    (data.contas?.lancamentos || []).forEach((l) => { if (normalizar(l.descricao).includes(nq)) resultados.push({ tab: "pessoal", label: "Contas", texto: l.descricao + " · " + fmtDinheiro(l.valor), extra: fmtData(l.data) }); });
     data.capturas.forEach((c) => { if (normalizar(c.texto).includes(nq)) resultados.push({ tab: "captura", label: "Captura", texto: c.texto, extra: "" }); });
-    data.lembretes.forEach((l) => { if (normalizar(l.texto).includes(nq)) resultados.push({ tab: "hoje", label: "Funções fixas", texto: l.texto, extra: "" }); });
+    data.lembretes.forEach((l) => { if (normalizar(l.texto).includes(nq)) resultados.push({ tab: "hoje", label: "Dever diário", texto: l.texto, extra: "" }); });
   }
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto" style={{ backgroundColor: FUNDO }}>
@@ -1520,7 +1551,7 @@ export default function App() {
           dados.pessoas = EQUIPE_INICIAL.map((e) => ({ id: uid(), nome: e.nome, cargo: e.cargo, equipe: true, fixado: true, itens: [] }));
         } else {
           // Marca Bismarck, Graciano e Marcio como equipe/fixados se já existirem
-          const nomesEquipe = ["bismarck", "graciano", "marcio moushe", "márcio moushe"];
+          const nomesEquipe = ["bismarck", "graciano", "marcio moushe", "márcio moushe", "moushe", "marcio", "márcio"];
           dados.pessoas.forEach((p) => {
             if (nomesEquipe.includes(normalizar(p.nome))) { p.equipe = true; p.fixado = true; }
           });
