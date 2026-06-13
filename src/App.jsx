@@ -164,14 +164,14 @@ const TEMAS_TIMELINE = [
   "posto de gasolina RJ", "bets apostas", "jogo do tigrinho", "feminicídio Rio de Janeiro",
 ];
 
-const ORDEM_TABS = ["hoje", "captura", "demandas", "pessoas", "anotacoes", "pessoal", "conteudos"];
+const ORDEM_TABS = ["hoje", "captura", "demandas", "pessoas", "anotacoes", "conteudos", "pessoal"];
 const DEFAULT_DATA = {
   appName: "KOCH",
   tabNames: {
     hoje: "Hoje", captura: "Captura", demandas: "Demandas", pessoas: "Pessoas",
     anotacoes: "Anotações", pessoal: "Vida Pessoal", conteudos: "Conteúdos",
   },
-  lembretesTitulo: "Funções fixas",
+  lembretesTitulo: "Dever diário",
   capturas: [], demandas: [], pessoas: [], lembretes: [], lembreteChecks: {},
   anotacoes: [],
   pessoal: { tarefas: [] },
@@ -572,21 +572,33 @@ function HojeScreen({ data, update, today, amanha }) {
 }
 
 // ============ Captura ============
+function CapturaInput({ onAdd }) {
+  const [v, setV] = useState("");
+  const submit = () => { const t = v.trim(); if (!t) return; onAdd(t); setV(""); };
+  return (
+    <div className="flex gap-2 items-end">
+      <textarea value={v} onChange={(e) => setV(e.target.value)} placeholder="O que veio na cabeça?" rows={2}
+        className="flex-1 min-w-0 bg-white border border-gray-200 rounded-xl px-3.5 py-2.5 text-base outline-none focus:border-gray-400 resize-none" />
+      <button onClick={submit} className="px-4 py-2.5 rounded-xl text-sm font-bold flex-shrink-0 active:opacity-80" style={{ backgroundColor: AMARELO, color: PRETO }}>Guardar</button>
+    </div>
+  );
+}
+
 function CapturaScreen({ data, update, goTo }) {
   return (
     <div>
       <ScreenTitle data={data} update={update} tabKey="captura" />
-      <div className="mb-4">
-        <AddInput placeholder="O que veio na cabeça?" buttonLabel="Guardar"
-          onAdd={(t) => update((d) => { d.capturas.unshift({ id: uid(), texto: t, criadoEm: hojeStr() }); })} />
+      <div className="mb-1">
+        <CapturaInput onAdd={(t) => update((d) => { d.capturas.unshift({ id: uid(), texto: t, criadoEm: hojeStr() }); })} />
       </div>
+      <p className="text-xs text-gray-400 mb-4 px-1">Enter pula linha. Toca em Guardar pra enviar.</p>
       <Card className="divide-y divide-gray-100">
         {data.capturas.length === 0 && <Vazio texto="Caixa de entrada vazia." />}
         {data.capturas.map((c) => (
           <div key={c.id} className="px-4 py-3.5">
             <div className="flex items-start gap-2">
               <div className="flex-1 min-w-0">
-                <EditableText value={c.texto} onSave={(v) => update((d) => { const a = d.capturas.find((x) => x.id === c.id); if (a) a.texto = v; })} className="text-base text-gray-900 font-medium" />
+                <EditableText value={c.texto} onSave={(v) => update((d) => { const a = d.capturas.find((x) => x.id === c.id); if (a) a.texto = v; })} className="text-base text-gray-900 font-medium whitespace-pre-wrap" />
                 <p className="text-xs text-gray-400 mt-0.5">{fmtData(c.criadoEm)}</p>
               </div>
               <ConfirmButton onConfirm={() => update((d) => { const a = d.capturas.find((x) => x.id === c.id); if (a) jogarNaLixeira(d, "captura", a); d.capturas = d.capturas.filter((x) => x.id !== c.id); })} />
@@ -619,19 +631,22 @@ function PessoasScreen({ data, update, today, goTo }) {
       </div>
       {data.pessoas.length === 0 && <Card><Vazio texto="Adicione os nomes da sua equipe." /></Card>}
       <div className="space-y-3">
-        {data.pessoas.map((p) => {
+        {[...data.pessoas].sort((a, b) => (!!b.fixado - !!a.fixado)).map((p) => {
           const itens = p.itens || [];
           const abertos = itens.filter((i) => !i.feito).length;
           const demandasDela = data.demandas.filter((d) => d.pessoaId === p.id && d.status !== "feito");
           const abertaEsta = aberta === p.id;
           return (
-            <Card key={p.id}>
+            <Card key={p.id} style={p.equipe ? { backgroundColor: "#FFFCEC", borderColor: "#F2E6A8" } : {}}>
               <div className="flex items-center gap-3 px-4 py-3.5 cursor-pointer" onClick={() => setAberta(abertaEsta ? null : p.id)}>
                 <div className="w-11 h-11 rounded-full flex items-center justify-center font-black text-lg flex-shrink-0" style={{ backgroundColor: PRETO, color: AMARELO }}>{p.nome.charAt(0).toUpperCase()}</div>
                 <div className="flex-1 min-w-0">
-                  <div className="text-base font-bold text-gray-900">{p.nome}</div>
+                  <div className="text-base font-bold text-gray-900 flex items-center gap-1.5">
+                    {p.fixado && <span style={{ color: AMARELO_TEXTO }}>📌</span>}
+                    {p.nome}
+                  </div>
                   <div className="text-xs text-gray-400 mt-0.5">
-                    {p.cargo ? p.cargo + " · " : ""}{abertos} pendente{abertos !== 1 ? "s" : ""}{demandasDela.length > 0 ? ` · ${demandasDela.length} demanda${demandasDela.length !== 1 ? "s" : ""}` : ""}
+                    {p.equipe && p.cargo ? p.cargo.split(" · ")[0] + " · " : ""}{abertos} pendente{abertos !== 1 ? "s" : ""}{demandasDela.length > 0 ? ` · ${demandasDela.length} demanda${demandasDela.length !== 1 ? "s" : ""}` : ""}
                   </div>
                 </div>
                 <span className="text-gray-300 text-base">{abertaEsta ? "▴" : "▾"}</span>
@@ -642,11 +657,6 @@ function PessoasScreen({ data, update, today, goTo }) {
                     <label className="text-xs font-semibold text-gray-500 block mb-1">Nome</label>
                     <EditableText value={p.nome} onSave={(v) => update((d) => { const a = d.pessoas.find((x) => x.id === p.id); if (a) a.nome = v; })}
                       className="text-sm font-bold text-gray-900 bg-gray-50 rounded-lg px-2.5 py-2 block" />
-                  </div>
-                  <div className="mb-3">
-                    <label className="text-xs font-semibold text-gray-500 block mb-1">Função</label>
-                    <EditableText value={p.cargo || ""} placeholder="Ex.: fotógrafo e editor de vídeo" onSave={(v) => update((d) => { const a = d.pessoas.find((x) => x.id === p.id); if (a) a.cargo = v; })}
-                      className="text-sm text-gray-700 bg-gray-50 rounded-lg px-2.5 py-2 block" />
                   </div>
                   {itens.map((item) => (
                     <div key={item.id} className="flex items-center gap-3 py-2">
@@ -679,10 +689,10 @@ function PessoasScreen({ data, update, today, goTo }) {
                     </div>
                   )}
                   {(() => {
+                    if (!p.equipe) return null;
                     const feitas = data.demandas.filter((d) => d.pessoaId === p.id && d.status === "feito");
                     const noPrazo = feitas.filter((d) => !d.atrasadaNaEntrega).length;
                     const atrasou = feitas.filter((d) => d.atrasadaNaEntrega).length;
-                    if (feitas.length === 0 && demandasDela.length === 0) return null;
                     return (
                       <div className="mb-3">
                         <h4 className="text-xs font-black text-gray-500 uppercase tracking-wide mb-1.5">Histórico</h4>
@@ -1507,12 +1517,18 @@ export default function App() {
         if (dados.anotacoes) dados.anotacoes.forEach((n) => { if (n.html === undefined) n.html = (n.texto || "").split("\n").map((l) => escapeHtml(l)).join("<br>"); });
         dados.lixeira = (dados.lixeira || []).filter((i) => diasDesde(i.apagadoEm) < DIAS_LIXEIRA);
         if (!dados.pessoas || dados.pessoas.length === 0) {
-          dados.pessoas = EQUIPE_INICIAL.map((e) => ({ id: uid(), nome: e.nome, cargo: e.cargo, itens: [] }));
+          dados.pessoas = EQUIPE_INICIAL.map((e) => ({ id: uid(), nome: e.nome, cargo: e.cargo, equipe: true, fixado: true, itens: [] }));
+        } else {
+          // Marca Bismarck, Graciano e Marcio como equipe/fixados se já existirem
+          const nomesEquipe = ["bismarck", "graciano", "marcio moushe", "márcio moushe"];
+          dados.pessoas.forEach((p) => {
+            if (nomesEquipe.includes(normalizar(p.nome))) { p.equipe = true; p.fixado = true; }
+          });
         }
         setData({
           ...DEFAULT_DATA, ...dados,
           tabNames: { ...DEFAULT_DATA.tabNames, ...(dados.tabNames || {}) },
-          lembretesTitulo: dados.lembretesTitulo || DEFAULT_DATA.lembretesTitulo,
+          lembretesTitulo: (!dados.lembretesTitulo || dados.lembretesTitulo === "Funções fixas") ? "Dever diário" : dados.lembretesTitulo,
           pessoal: { tarefas: dados.pessoal?.tarefas || [] },
           contas: { lancamentos: dados.contas?.lancamentos || [], tagsCustom: dados.contas?.tagsCustom || [] },
           conteudos: { itens: dados.conteudos?.itens || [], pautas: dados.conteudos?.pautas || [], datas: dados.conteudos?.datas || [] },
