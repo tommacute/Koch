@@ -159,6 +159,11 @@ const corDaEditoria = (nome) => {
   return i >= 0 ? PALETA_EDITORIAS[i % PALETA_EDITORIAS.length] : COR_OUTROS;
 };
 
+const TEMAS_TIMELINE = [
+  "política Rio de Janeiro", "segurança pública RJ", "preço gasolina Rio de Janeiro",
+  "posto de gasolina RJ", "bets apostas", "jogo do tigrinho", "feminicídio Rio de Janeiro",
+];
+
 const ORDEM_TABS = ["hoje", "captura", "demandas", "pessoas", "anotacoes", "pessoal", "conteudos"];
 const DEFAULT_DATA = {
   appName: "KOCH",
@@ -174,6 +179,12 @@ const DEFAULT_DATA = {
   conteudos: { itens: [], pautas: [], datas: [] },
   lixeira: [],
 };
+
+const EQUIPE_INICIAL = [
+  { nome: "Bismarck", cargo: "Fotógrafo e editor de vídeo · acompanha agendas, banco de imagens" },
+  { nome: "Graciano", cargo: "Design e criação · conteúdo, abaixo-assinado e diversos" },
+  { nome: "Marcio Moushe", cargo: "Editor de vídeo" },
+];
 
 // ============ Componentes básicos ============
 function EditableText({ value, onSave, className = "", style = {}, placeholder = "Toque para escrever" }) {
@@ -259,6 +270,7 @@ function ChipFiltro({ ativo, onClick, children }) {
 // ============ Demandas ============
 const pesoPrioridade = { alta: 0, media: 1, baixa: 2 };
 const ordenarDemandas = (a, b) => {
+  if (!!a.fav !== !!b.fav) return a.fav ? -1 : 1;
   const ap = a.prazo || "9999-99-99", bp = b.prazo || "9999-99-99";
   if (ap !== bp) return ap < bp ? -1 : 1;
   return (pesoPrioridade[a.prioridade] ?? 1) - (pesoPrioridade[b.prioridade] ?? 1);
@@ -269,7 +281,20 @@ function DemandaItem({ d, data, update, expandida, onToggle, today, amanha }) {
   const atrasada = d.prazo && d.prazo < today && d.status !== "feito";
   const st = STATUS[d.status] || STATUS.afazer;
   const pr = PRIORIDADES[d.prioridade] || PRIORIDADES.media;
-  const setCampo = (campo, valor) => update((dt) => { const a = dt.demandas.find((x) => x.id === d.id); if (a) a[campo] = valor; });
+  const setCampo = (campo, valor) => update((dt) => {
+    const a = dt.demandas.find((x) => x.id === d.id);
+    if (!a) return;
+    if (campo === "status") {
+      if (valor === "feito" && a.status !== "feito") {
+        a.concluidoEm = hojeStr();
+        if (a.prazo) a.atrasadaNaEntrega = a.prazo < hojeStr();
+      }
+      if (valor !== "feito") { a.concluidoEm = null; a.atrasadaNaEntrega = false; }
+    }
+    a[campo] = valor;
+  });
+
+  const toggleFav = () => update((dt) => { const a = dt.demandas.find((x) => x.id === d.id); if (a) a.fav = !a.fav; });
 
   let chipPrazo = null;
   if (d.prazo) {
@@ -284,7 +309,10 @@ function DemandaItem({ d, data, update, expandida, onToggle, today, amanha }) {
       <div className="flex items-start gap-3">
         <div className="pt-0.5"><Check checked={d.status === "feito"} onChange={() => setCampo("status", d.status === "feito" ? "afazer" : "feito")} /></div>
         <div className="flex-1 min-w-0" onClick={onToggle}>
-          <div className={"text-base leading-snug " + (d.status === "feito" ? "text-gray-400 line-through" : "text-gray-900 font-medium")}>{d.titulo}</div>
+          <div className={"text-base leading-snug flex items-center gap-1.5 " + (d.status === "feito" ? "text-gray-400 line-through" : "text-gray-900 font-medium")}>
+            {d.fav && <span style={{ color: AMARELO_TEXTO }}>★</span>}
+            {d.titulo}
+          </div>
           <div className="flex flex-wrap items-center gap-1.5 mt-2">
             {chipPrazo}
             {d.status !== "afazer" && d.status !== "feito" && <span className="text-xs px-2.5 py-1 rounded-full font-bold" style={{ backgroundColor: st.bg, color: st.fg }}>{st.label}</span>}
@@ -322,7 +350,10 @@ function DemandaItem({ d, data, update, expandida, onToggle, today, amanha }) {
               </select>
             </div>
           </div>
-          <div className="flex justify-end">
+          <div className="flex justify-between items-center">
+            <button onClick={toggleFav} className="text-xs font-bold px-2.5 py-1.5 rounded-lg" style={{ backgroundColor: d.fav ? AMARELO : "#F2F2F2", color: d.fav ? PRETO : "#666" }}>
+              {d.fav ? "★ Favoritada" : "☆ Favoritar"}
+            </button>
             <ConfirmButton label="Apagar demanda" confirmLabel="Confirmar exclusão"
               className="text-xs font-semibold text-red-500 px-2.5 py-1.5 rounded-lg hover:bg-red-50"
               onConfirm={() => update((dt) => { const a = dt.demandas.find((x) => x.id === d.id); if (a) jogarNaLixeira(dt, "demanda", a); dt.demandas = dt.demandas.filter((x) => x.id !== d.id); })} />
@@ -429,6 +460,68 @@ function FuncoesFixas({ data, update }) {
   );
 }
 
+// ============ Visão dos próximos dias ============
+function ProximosDias({ data, today }) {
+  const [aberto, setAberto] = useState(false);
+  const dias = [];
+  for (let i = 0; i < 4; i++) {
+    const d = new Date(); d.setDate(d.getDate() + i);
+    dias.push(isoData(d));
+  }
+  const nomeDia = (iso, i) => {
+    if (i === 0) return "Hoje";
+    if (i === 1) return "Amanhã";
+    const [y, m, dd] = iso.split("-").map(Number);
+    return new Date(y, m - 1, dd).toLocaleDateString("pt-BR", { weekday: "long" });
+  };
+
+  const itensDoDia = (iso) => {
+    const arr = [];
+    data.demandas.filter((d) => d.status !== "feito" && d.prazo === iso).forEach((d) => arr.push({ tipo: "Demanda", texto: d.titulo, cor: PRETO }));
+    (data.conteudos?.itens || []).filter((c) => c.status !== "noar" && c.prazo === iso).forEach((c) => arr.push({ tipo: "Conteúdo", texto: c.titulo, cor: "#444" }));
+    (data.conteudos?.datas || []).filter((dt) => dt.data === iso).forEach((dt) => arr.push({ tipo: "Data", texto: dt.titulo, cor: "#C0392B" }));
+    (data.pessoal?.tarefas || []).filter((t) => !t.feito && t.prazo === iso).forEach((t) => arr.push({ tipo: "Pessoal", texto: t.texto, cor: "#0B8043" }));
+    return arr;
+  };
+
+  const total = dias.reduce((s, iso) => s + itensDoDia(iso).length, 0);
+
+  return (
+    <div className="rounded-2xl border border-gray-200 shadow-sm mb-5 overflow-hidden bg-white">
+      <button onClick={() => setAberto(!aberto)} className="w-full px-4 py-3.5 flex items-center justify-between gap-2 text-left">
+        <span className="text-base font-black tracking-tight text-gray-900">Próximos 4 dias</span>
+        <span className="flex items-center gap-2 flex-shrink-0">
+          {total > 0 && <span className="text-xs font-bold px-2.5 py-1 rounded-full" style={{ backgroundColor: AMARELO, color: PRETO }}>{total}</span>}
+          <span className="text-gray-400">{aberto ? "▴" : "▾"}</span>
+        </span>
+      </button>
+      {aberto && (
+        <div className="px-4 pb-4">
+          {dias.map((iso, i) => {
+            const itens = itensDoDia(iso);
+            return (
+              <div key={iso} className="py-2 border-t border-gray-100 first:border-t-0">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-sm font-black text-gray-900 capitalize">{nomeDia(iso, i)}</span>
+                  <span className="text-xs text-gray-400">{fmtData(iso)}</span>
+                </div>
+                {itens.length === 0 && <p className="text-xs text-gray-300">livre</p>}
+                {itens.map((it, j) => (
+                  <div key={j} className="flex items-center gap-2 py-0.5">
+                    <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: it.cor }}></span>
+                    <span className="text-sm text-gray-700 truncate">{it.texto}</span>
+                    <span className="text-xs text-gray-300 flex-shrink-0">· {it.tipo}</span>
+                  </div>
+                ))}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ============ Hoje ============
 function HojeScreen({ data, update, today, amanha }) {
   const [expandida, setExpandida] = useState(null);
@@ -440,6 +533,7 @@ function HojeScreen({ data, update, today, amanha }) {
     <div>
       <ScreenTitle data={data} update={update} tabKey="hoje" />
       <FuncoesFixas data={data} update={update} />
+      <ProximosDias data={data} today={today} />
       {semNada && <Card className="px-4 py-6 text-center"><p className="text-gray-900 font-bold">Nada atrasado, nada vencendo</p><p className="text-gray-400 text-sm mt-1">Demandas atrasadas ou com prazo em 24h aparecem aqui.</p></Card>}
       {atrasadas.length > 0 && (
         <div className="mb-5">
@@ -536,15 +630,23 @@ function PessoasScreen({ data, update, today, goTo }) {
                 <div className="w-11 h-11 rounded-full flex items-center justify-center font-black text-lg flex-shrink-0" style={{ backgroundColor: PRETO, color: AMARELO }}>{p.nome.charAt(0).toUpperCase()}</div>
                 <div className="flex-1 min-w-0">
                   <div className="text-base font-bold text-gray-900">{p.nome}</div>
-                  <div className="text-xs text-gray-400 mt-0.5">{abertos} pendente{abertos !== 1 ? "s" : ""}{demandasDela.length > 0 ? ` · ${demandasDela.length} demanda${demandasDela.length !== 1 ? "s" : ""}` : ""}</div>
+                  <div className="text-xs text-gray-400 mt-0.5">
+                    {p.cargo ? p.cargo + " · " : ""}{abertos} pendente{abertos !== 1 ? "s" : ""}{demandasDela.length > 0 ? ` · ${demandasDela.length} demanda${demandasDela.length !== 1 ? "s" : ""}` : ""}
+                  </div>
                 </div>
                 <span className="text-gray-300 text-base">{abertaEsta ? "▴" : "▾"}</span>
               </div>
               {abertaEsta && (
                 <div className="px-4 pb-4 border-t border-gray-100 pt-3">
                   <div className="mb-3">
+                    <label className="text-xs font-semibold text-gray-500 block mb-1">Nome</label>
                     <EditableText value={p.nome} onSave={(v) => update((d) => { const a = d.pessoas.find((x) => x.id === p.id); if (a) a.nome = v; })}
                       className="text-sm font-bold text-gray-900 bg-gray-50 rounded-lg px-2.5 py-2 block" />
+                  </div>
+                  <div className="mb-3">
+                    <label className="text-xs font-semibold text-gray-500 block mb-1">Função</label>
+                    <EditableText value={p.cargo || ""} placeholder="Ex.: fotógrafo e editor de vídeo" onSave={(v) => update((d) => { const a = d.pessoas.find((x) => x.id === p.id); if (a) a.cargo = v; })}
+                      className="text-sm text-gray-700 bg-gray-50 rounded-lg px-2.5 py-2 block" />
                   </div>
                   {itens.map((item) => (
                     <div key={item.id} className="flex items-center gap-3 py-2">
@@ -576,6 +678,34 @@ function PessoasScreen({ data, update, today, goTo }) {
                       <button onClick={() => goTo("demandas")} className="text-xs font-bold mt-1" style={{ color: AMARELO_TEXTO }}>Ir para Demandas →</button>
                     </div>
                   )}
+                  {(() => {
+                    const feitas = data.demandas.filter((d) => d.pessoaId === p.id && d.status === "feito");
+                    const noPrazo = feitas.filter((d) => !d.atrasadaNaEntrega).length;
+                    const atrasou = feitas.filter((d) => d.atrasadaNaEntrega).length;
+                    if (feitas.length === 0 && demandasDela.length === 0) return null;
+                    return (
+                      <div className="mb-3">
+                        <h4 className="text-xs font-black text-gray-500 uppercase tracking-wide mb-1.5">Histórico</h4>
+                        <div className="grid grid-cols-3 gap-2">
+                          <div className="rounded-xl bg-gray-50 px-2 py-2 text-center">
+                            <div className="text-lg font-black text-gray-900">{demandasDela.length}</div>
+                            <div className="text-xs text-gray-400">ativas</div>
+                          </div>
+                          <div className="rounded-xl px-2 py-2 text-center" style={{ backgroundColor: "#E3F6E8" }}>
+                            <div className="text-lg font-black" style={{ color: "#1E8E3E" }}>{noPrazo}</div>
+                            <div className="text-xs" style={{ color: "#1E8E3E" }}>no prazo</div>
+                          </div>
+                          <div className="rounded-xl px-2 py-2 text-center" style={{ backgroundColor: atrasou > 0 ? "#FDE3E3" : "#F2F2F2" }}>
+                            <div className="text-lg font-black" style={{ color: atrasou > 0 ? "#C0392B" : "#999" }}>{atrasou}</div>
+                            <div className="text-xs" style={{ color: atrasou > 0 ? "#C0392B" : "#999" }}>atrasou</div>
+                          </div>
+                        </div>
+                        {feitas.length >= 3 && demandasDela.length >= 5 && (
+                          <p className="text-xs mt-2" style={{ color: AMARELO_TEXTO }}>⚠ {p.nome.split(" ")[0]} está com bastante coisa ativa — vale checar a carga.</p>
+                        )}
+                      </div>
+                    );
+                  })()}
                   <div className="flex justify-end">
                     <ConfirmButton label="Remover pessoa" confirmLabel="Confirmar remoção"
                       className="text-xs font-semibold text-red-500 px-2.5 py-1.5 rounded-lg hover:bg-red-50"
@@ -613,9 +743,15 @@ function EditorNota({ nota, update, onVoltar }) {
     <div>
       <div className="flex items-center justify-between mb-3 gap-2">
         <button onClick={onVoltar} className="text-sm font-bold flex-shrink-0" style={{ color: AMARELO_TEXTO }}>‹ Anotações</button>
-        <ConfirmButton label="Apagar" confirmLabel="Confirmar"
-          className="text-xs font-semibold text-red-500 px-2.5 py-1.5 rounded-lg hover:bg-red-50"
-          onConfirm={() => { update((d) => { const a = d.anotacoes.find((n) => n.id === nota.id); if (a) jogarNaLixeira(d, "anotacao", a); d.anotacoes = d.anotacoes.filter((n) => n.id !== nota.id); }); onVoltar(); }} />
+        <div className="flex items-center gap-2">
+          <button onClick={() => update((d) => { const a = d.anotacoes.find((n) => n.id === nota.id); if (a) a.fav = !a.fav; })}
+            className="text-sm font-bold px-2.5 py-1.5 rounded-lg" style={{ backgroundColor: nota.fav ? AMARELO : "#F2F2F2", color: nota.fav ? PRETO : "#666" }}>
+            {nota.fav ? "★" : "☆"}
+          </button>
+          <ConfirmButton label="Apagar" confirmLabel="Confirmar"
+            className="text-xs font-semibold text-red-500 px-2.5 py-1.5 rounded-lg hover:bg-red-50"
+            onConfirm={() => { update((d) => { const a = d.anotacoes.find((n) => n.id === nota.id); if (a) jogarNaLixeira(d, "anotacao", a); d.anotacoes = d.anotacoes.filter((n) => n.id !== nota.id); }); onVoltar(); }} />
+        </div>
       </div>
       <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
         <div className="border-b border-gray-100 p-2">
@@ -668,12 +804,12 @@ function AnotacoesScreen({ data, update, notaParaAbrir, onNotaAberta }) {
         className="w-full mb-4 py-3 rounded-xl text-base font-black active:opacity-80" style={{ backgroundColor: AMARELO, color: PRETO }}>Nova anotação</button>
       <Card className="divide-y divide-gray-100">
         {data.anotacoes.length === 0 && <Vazio texto="Nenhuma anotação ainda." />}
-        {data.anotacoes.map((n) => {
+        {[...data.anotacoes].sort((a, b) => (!!a.fav !== !!b.fav ? (a.fav ? -1 : 1) : 0)).map((n) => {
           const plain = htmlParaTexto(n.html || "");
           const linhas = plain.split("\n").map((l) => l.trim()).filter(Boolean);
           return (
             <button key={n.id} onClick={() => setAbertaId(n.id)} className="w-full text-left px-4 py-3.5 block active:bg-gray-50">
-              <div className="text-base font-bold text-gray-900 truncate">{linhas[0] || "Sem título"}</div>
+              <div className="text-base font-bold text-gray-900 truncate flex items-center gap-1.5">{n.fav && <span style={{ color: AMARELO_TEXTO }}>★</span>}{linhas[0] || "Sem título"}</div>
               <div className="text-sm text-gray-400 mt-0.5 truncate">{fmtData(n.atualizadoEm)}{linhas[1] ? " · " + linhas[1] : ""}</div>
             </button>
           );
@@ -1040,6 +1176,55 @@ function DatasChave({ data, update, today }) {
   );
 }
 
+function TimelineModulo({ update, goToPautas }) {
+  const [tema, setTema] = useState("");
+  const [colar, setColar] = useState("");
+  const [colarLink, setColarLink] = useState("");
+
+  const buscar = (q) => {
+    const query = encodeURIComponent(q + " quando:7d");
+    window.open(`https://news.google.com/search?q=${query}&hl=pt-BR&gl=BR&ceid=BR:pt-419`, "_blank");
+  };
+
+  const mandarPraPauta = () => {
+    const texto = colar.trim();
+    if (!texto) return;
+    update((d) => { d.conteudos.pautas.unshift({ id: uid(), texto, editoria: "Outros", link: colarLink.trim(), criadoEm: hojeStr() }); });
+    setColar(""); setColarLink("");
+    goToPautas();
+  };
+
+  return (
+    <div>
+      <Card className="p-4 mb-4">
+        <h3 className="text-sm font-black text-gray-900 uppercase tracking-wide mb-1">Buscar notícias</h3>
+        <p className="text-xs text-gray-400 mb-3">Abre as notícias dos últimos 7 dias no Google Notícias. Achou algo que rende? Cola embaixo e manda pra pauta.</p>
+        <div className="flex flex-wrap gap-2 mb-3">
+          {TEMAS_TIMELINE.map((t) => (
+            <button key={t} onClick={() => buscar(t)} className="text-xs px-3 py-1.5 rounded-full font-bold" style={{ backgroundColor: AMARELO_CLARO, color: AMARELO_TEXTO }}>{t} ↗</button>
+          ))}
+        </div>
+        <div className="flex gap-2">
+          <input value={tema} onChange={(e) => setTema(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && tema.trim()) buscar(tema.trim()); }}
+            placeholder="Buscar outro tema…" className="flex-1 min-w-0 bg-gray-100 rounded-xl px-3.5 py-2.5 text-base outline-none" />
+          <button onClick={() => tema.trim() && buscar(tema.trim())} className="px-4 py-2.5 rounded-xl text-sm font-bold flex-shrink-0" style={{ backgroundColor: PRETO, color: AMARELO }}>Buscar ↗</button>
+        </div>
+      </Card>
+
+      <Card className="p-4">
+        <h3 className="text-sm font-black text-gray-900 uppercase tracking-wide mb-1">Mandar pra pauta</h3>
+        <p className="text-xs text-gray-400 mb-3">Achou uma notícia? Cola o resumo aqui e o link da fonte. Vira pauta no seu banco de ideias.</p>
+        <textarea value={colar} onChange={(e) => setColar(e.target.value)} placeholder="Resumo da notícia / ideia de conteúdo…"
+          className="w-full bg-gray-100 rounded-xl px-3.5 py-2.5 text-base outline-none resize-none mb-2" rows={3} />
+        <input value={colarLink} onChange={(e) => setColarLink(e.target.value)} placeholder="Link da fonte (opcional)"
+          className="w-full bg-gray-100 rounded-xl px-3.5 py-2.5 text-base outline-none mb-3" />
+        <button onClick={mandarPraPauta} className="w-full py-2.5 rounded-xl text-sm font-black" style={{ backgroundColor: AMARELO, color: PRETO }}>→ Mandar pra Pauta</button>
+      </Card>
+      <p className="text-xs text-gray-400 mt-3 px-1">A busca automática de notícias dentro do app virá numa próxima etapa. Por ora, isso te dá o caminho rápido.</p>
+    </div>
+  );
+}
+
 function ConteudosScreen({ data, update, today, amanha }) {
   const [sub, setSub] = useState("conteudos");
   const [filtroEtapa, setFiltroEtapa] = useState("ativos");
@@ -1079,7 +1264,10 @@ function ConteudosScreen({ data, update, today, amanha }) {
       <div className="flex gap-2 mb-4">
         <ChipFiltro ativo={sub === "conteudos"} onClick={() => setSub("conteudos")}>Conteúdos{itens.filter((c) => c.status !== "noar").length > 0 ? ` · ${itens.filter((c) => c.status !== "noar").length}` : ""}</ChipFiltro>
         <ChipFiltro ativo={sub === "pautas"} onClick={() => setSub("pautas")}>Pautas{pautas.length > 0 ? ` · ${pautas.length}` : ""}</ChipFiltro>
+        <ChipFiltro ativo={sub === "timeline"} onClick={() => setSub("timeline")}>Timeline</ChipFiltro>
       </div>
+
+      {sub === "timeline" && <TimelineModulo update={update} goToPautas={() => setSub("pautas")} />}
 
       {sub === "conteudos" && (
         <div>
@@ -1318,6 +1506,9 @@ export default function App() {
         if (dados.pessoas) dados.pessoas.forEach((p) => { if (!p.itens) p.itens = [...(p.devo || []), ...(p.falar || [])]; });
         if (dados.anotacoes) dados.anotacoes.forEach((n) => { if (n.html === undefined) n.html = (n.texto || "").split("\n").map((l) => escapeHtml(l)).join("<br>"); });
         dados.lixeira = (dados.lixeira || []).filter((i) => diasDesde(i.apagadoEm) < DIAS_LIXEIRA);
+        if (!dados.pessoas || dados.pessoas.length === 0) {
+          dados.pessoas = EQUIPE_INICIAL.map((e) => ({ id: uid(), nome: e.nome, cargo: e.cargo, itens: [] }));
+        }
         setData({
           ...DEFAULT_DATA, ...dados,
           tabNames: { ...DEFAULT_DATA.tabNames, ...(dados.tabNames || {}) },
