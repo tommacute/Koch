@@ -137,13 +137,21 @@ function parseLancamento(texto) {
 const FORMATOS = {
   react: "React", carrossel: "Carrossel", card: "Card", reels: "Reels", estatico: "Estático",
 };
+const FORMATO_COR = {
+  react: { bg: "#EAF3FF", chip: "#1A73E8" },
+  carrossel: { bg: "#FFF0E6", chip: "#B45309" },
+  card: { bg: "#F3EEFF", chip: "#6D4AFF" },
+  reels: { bg: "#FFEAF2", chip: "#D6336C" },
+  estatico: { bg: "#EAF7EE", chip: "#1E8E3E" },
+};
 const ETAPAS = {
   ideia: { label: "Ideia", bg: "#EFEFEF", fg: "#444444" },
   roteiro: { label: "Roteiro", bg: AMARELO_CLARO, fg: AMARELO_TEXTO },
-  gravado: { label: "Gravado", bg: "#FFE8CC", fg: "#B45309" },
-  editado: { label: "Editado", bg: "#CDE6FF", fg: "#1A73E8" },
-  noar: { label: "No ar", bg: "#E3F6E8", fg: "#1E8E3E" },
+  gravar: { label: "Falta gravar", bg: "#FFE8CC", fg: "#B45309" },
+  editar: { label: "Falta editar", bg: "#CDE6FF", fg: "#1A73E8" },
+  pronto: { label: "Pronto", bg: "#E3F6E8", fg: "#1E8E3E" },
 };
+const ETAPA_FINAL = "pronto";
 const EDITORIAS = [
   "Máfia dos Combustíveis", "Humanização", "Política", "Críticas Cláudio/Douglas",
   "Apoio Desembargador", "Corrupção", "Transportes/Detran", "Identidade Política",
@@ -349,6 +357,13 @@ function DemandaItem({ d, data, update, expandida, onToggle, today, amanha }) {
                 {data.pessoas.map((p) => <option key={p.id} value={p.id}>{p.nome}</option>)}
               </select>
             </div>
+            <div>
+              <label className="text-xs font-semibold text-gray-500 block mb-1">Tipo</label>
+              <select value={d.esfera || "trabalho"} onChange={(e) => setCampo("esfera", e.target.value)} className="w-full bg-gray-100 rounded-lg px-2 py-2 text-sm outline-none">
+                <option value="trabalho">Trabalho</option>
+                <option value="pessoal">Vida pessoal</option>
+              </select>
+            </div>
           </div>
           <div className="flex justify-between items-center">
             <button onClick={toggleFav} className="text-xs font-bold px-2.5 py-1.5 rounded-lg" style={{ backgroundColor: d.fav ? AMARELO : "#F2F2F2", color: d.fav ? PRETO : "#666" }}>
@@ -389,7 +404,7 @@ function DemandasScreen({ data, update, today, amanha }) {
     <div>
       <ScreenTitle data={data} update={update} tabKey="demandas" />
       <div className="mb-3">
-        <AddInput placeholder="Nova demanda…" onAdd={(t) => update((d) => { d.demandas.unshift({ id: uid(), titulo: t, prazo: "", prioridade: "media", status: "afazer", pessoaId: null }); })} />
+        <AddInput placeholder="Nova demanda…" onAdd={(t) => { const novoId = uid(); update((d) => { d.demandas.unshift({ id: novoId, titulo: t, prazo: "", prioridade: "media", status: "afazer", pessoaId: null }); }); setExpandida(novoId); }} />
       </div>
       <div className="flex gap-2 mb-3 overflow-x-auto pb-1">
         {filtros.map((f) => <ChipFiltro key={f.k} ativo={filtro === f.k} onClick={() => setFiltro(f.k)}>{f.label}</ChipFiltro>)}
@@ -401,13 +416,39 @@ function DemandasScreen({ data, update, today, amanha }) {
         )}
       </div>
       <Card className="divide-y divide-gray-100">
-        {lista.length === 0 && <Vazio texto={filtro === "pessoas" ? "Nenhuma demanda direcionada a alguém." : "Nenhuma demanda aqui."} />}
-        {lista.map((d) => (
-          <DemandaItem key={d.id} d={d} data={data} update={update} today={today} amanha={amanha}
-            expandida={expandida === d.id} onToggle={() => setExpandida(expandida === d.id ? null : d.id)} />
-        ))}
+        {filtro === "ativas" ? (
+          (() => {
+            const trabalho = lista.filter((d) => (d.esfera || "trabalho") !== "pessoal");
+            const pessoal = lista.filter((d) => (d.esfera || "trabalho") === "pessoal");
+            if (lista.length === 0) return <Vazio texto="Nenhuma demanda ativa." />;
+            return (
+              <>
+                <div className="px-4 pt-3 pb-1 text-xs font-black text-gray-400 uppercase tracking-wide">Trabalho</div>
+                {trabalho.length === 0 && <Vazio texto="Nada de trabalho." />}
+                {trabalho.map((d) => (
+                  <DemandaItem key={d.id} d={d} data={data} update={update} today={today} amanha={amanha}
+                    expandida={expandida === d.id} onToggle={() => setExpandida(expandida === d.id ? null : d.id)} />
+                ))}
+                <div className="px-4 pt-3 pb-1 text-xs font-black text-gray-400 uppercase tracking-wide border-t-2 border-gray-100">Vida pessoal</div>
+                {pessoal.length === 0 && <Vazio texto="Nada pessoal." />}
+                {pessoal.map((d) => (
+                  <DemandaItem key={d.id} d={d} data={data} update={update} today={today} amanha={amanha}
+                    expandida={expandida === d.id} onToggle={() => setExpandida(expandida === d.id ? null : d.id)} />
+                ))}
+              </>
+            );
+          })()
+        ) : (
+          <>
+            {lista.length === 0 && <Vazio texto={filtro === "pessoas" ? "Nenhuma demanda direcionada a alguém." : "Nenhuma demanda aqui."} />}
+            {lista.map((d) => (
+              <DemandaItem key={d.id} d={d} data={data} update={update} today={today} amanha={amanha}
+                expandida={expandida === d.id} onToggle={() => setExpandida(expandida === d.id ? null : d.id)} />
+            ))}
+          </>
+        )}
       </Card>
-      {filtro === "ativas" && <p className="text-xs text-gray-400 mt-2 px-1">Demandas direcionadas a alguém ficam na aba "Pessoas" aqui do lado.</p>}
+      {filtro === "ativas" && <p className="text-xs text-gray-400 mt-2 px-1">Marque o tipo (Trabalho/Vida pessoal) ao abrir a demanda. As direcionadas a alguém ficam na aba "Pessoas".</p>}
     </div>
   );
 }
@@ -477,10 +518,18 @@ function ProximosDias({ data, today }) {
 
   const itensDoDia = (iso) => {
     const arr = [];
-    data.demandas.filter((d) => d.status !== "feito" && d.prazo === iso).forEach((d) => arr.push({ tipo: "Demanda", texto: d.titulo, cor: PRETO }));
-    (data.conteudos?.itens || []).filter((c) => c.status !== "noar" && c.prazo === iso).forEach((c) => arr.push({ tipo: "Conteúdo", texto: c.titulo, cor: "#444" }));
-    (data.conteudos?.datas || []).filter((dt) => dt.data === iso).forEach((dt) => arr.push({ tipo: "Data", texto: dt.titulo, cor: "#C0392B" }));
-    (data.pessoal?.tarefas || []).filter((t) => !t.feito && t.prazo === iso).forEach((t) => arr.push({ tipo: "Pessoal", texto: t.texto, cor: "#0B8043" }));
+    data.demandas.filter((d) => d.status !== "feito" && d.prazo === iso).forEach((d) => {
+      const pessoa = data.pessoas.find((p) => p.id === d.pessoaId);
+      arr.push({ tipo: "Demanda", texto: d.titulo, cor: PRETO, extra: pessoa ? pessoa.nome : "" });
+    });
+    (data.conteudos?.itens || []).filter((c) => c.status !== ETAPA_FINAL && c.prazo === iso).forEach((c) => {
+      const pessoa = data.pessoas.find((p) => p.id === c.pessoaId);
+      const etapa = ETAPAS[c.status] ? ETAPAS[c.status].label : "";
+      const extras = [pessoa ? pessoa.nome : "", etapa].filter(Boolean).join(" • ");
+      arr.push({ tipo: "Conteúdo", texto: c.titulo, cor: "#6D4AFF", extra: extras });
+    });
+    (data.conteudos?.datas || []).filter((dt) => dt.data === iso).forEach((dt) => arr.push({ tipo: "Data", texto: dt.titulo, cor: "#C0392B", extra: "" }));
+    (data.pessoal?.tarefas || []).filter((t) => !t.feito && t.prazo === iso).forEach((t) => arr.push({ tipo: "Pessoal", texto: t.texto, cor: "#0B8043", extra: "" }));
     return arr;
   };
 
@@ -510,7 +559,7 @@ function ProximosDias({ data, today }) {
                   <div key={j} className="flex items-center gap-2 py-0.5">
                     <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: it.cor }}></span>
                     <span className="text-sm text-gray-700 truncate">{it.texto}</span>
-                    <span className="text-xs text-gray-300 flex-shrink-0">· {it.tipo}</span>
+                    <span className="text-xs text-gray-400 flex-shrink-0 truncate">· {it.tipo}{it.extra ? " • " + it.extra : ""}</span>
                   </div>
                 ))}
               </div>
@@ -1060,7 +1109,7 @@ const sincronizarDemandaDeConteudo = (d, c) => {
       dem.prioridade = c.urgencia || "media";
       dem.pessoaId = c.pessoaId;
     }
-    if (c.status === "noar") dem.status = "feito";
+    if (c.status === ETAPA_FINAL) dem.status = "feito";
   } else if (c.demandaId) {
     d.demandas = d.demandas.filter((x) => x.id !== c.demandaId);
     c.demandaId = null;
@@ -1071,7 +1120,7 @@ function ConteudoItem({ c, data, update, expandida, onToggle, today, amanha }) {
   const pessoa = data.pessoas.find((p) => p.id === c.pessoaId);
   const et = ETAPAS[c.status] || ETAPAS.ideia;
   const ur = PRIORIDADES[c.urgencia] || PRIORIDADES.media;
-  const atrasado = c.prazo && c.prazo < today && c.status !== "noar";
+  const atrasado = c.prazo && c.prazo < today && c.status !== ETAPA_FINAL;
 
   const setCampo = (campo, valor) => update((dt) => {
     const a = dt.conteudos.itens.find((x) => x.id === c.id);
@@ -1088,14 +1137,16 @@ function ConteudoItem({ c, data, update, expandida, onToggle, today, amanha }) {
     else chipPrazo = <span className="text-xs px-2.5 py-1 rounded-full bg-gray-100 text-gray-500 font-medium">{fmtData(c.prazo)}</span>;
   }
 
+  const fc = FORMATO_COR[c.formato] || { bg: "#FFFFFF", chip: "#444" };
+
   return (
-    <div className="px-4 py-3.5">
+    <div className="px-4 py-3.5" style={{ backgroundColor: c.status === ETAPA_FINAL ? "#FAFAFA" : fc.bg }}>
       <div className="flex items-start gap-3">
         <div className="flex-1 min-w-0" onClick={onToggle}>
-          <div className={"text-base leading-snug " + (c.status === "noar" ? "text-gray-400" : "text-gray-900 font-medium")}>{c.titulo}</div>
+          <div className={"text-base leading-snug " + (c.status === ETAPA_FINAL ? "text-gray-400" : "text-gray-900 font-medium")}>{c.titulo}</div>
           <div className="flex flex-wrap items-center gap-1.5 mt-2">
             <span className="text-xs px-2.5 py-1 rounded-full font-bold" style={{ backgroundColor: et.bg, color: et.fg }}>{et.label}</span>
-            {c.formato && <span className="text-xs px-2.5 py-1 rounded-full font-bold text-white" style={{ backgroundColor: "#444" }}>{FORMATOS[c.formato] || c.formato}</span>}
+            {c.formato && <span className="text-xs px-2.5 py-1 rounded-full font-bold text-white" style={{ backgroundColor: fc.chip }}>{FORMATOS[c.formato] || c.formato}</span>}
             {c.editoria && (
               <span className="text-xs px-2.5 py-1 rounded-full font-bold bg-gray-100 text-gray-700 flex items-center gap-1">
                 <span className="w-2 h-2 rounded-full inline-block" style={{ backgroundColor: corDaEditoria(c.editoria) }}></span>
@@ -1279,7 +1330,7 @@ function ConteudosScreen({ data, update, today, amanha }) {
   const pautas = data.conteudos.pautas || [];
 
   let lista = [...itens];
-  if (filtroEtapa === "ativos") lista = lista.filter((c) => c.status !== "noar");
+  if (filtroEtapa === "ativos") lista = lista.filter((c) => c.status !== ETAPA_FINAL);
   else if (filtroEtapa !== "todos") lista = lista.filter((c) => c.status === filtroEtapa);
   if (filtroEditoria) lista = lista.filter((c) => c.editoria === filtroEditoria);
   lista.sort((a, b) => (a.prazo || "9999") < (b.prazo || "9999") ? -1 : 1);
@@ -1305,7 +1356,7 @@ function ConteudosScreen({ data, update, today, amanha }) {
       {datasAberto && <DatasChave data={data} update={update} today={today} />}
 
       <div className="flex gap-2 mb-4">
-        <ChipFiltro ativo={sub === "conteudos"} onClick={() => setSub("conteudos")}>Conteúdos{itens.filter((c) => c.status !== "noar").length > 0 ? ` · ${itens.filter((c) => c.status !== "noar").length}` : ""}</ChipFiltro>
+        <ChipFiltro ativo={sub === "conteudos"} onClick={() => setSub("conteudos")}>Conteúdos{itens.filter((c) => c.status !== ETAPA_FINAL).length > 0 ? ` · ${itens.filter((c) => c.status !== ETAPA_FINAL).length}` : ""}</ChipFiltro>
         <ChipFiltro ativo={sub === "pautas"} onClick={() => setSub("pautas")}>Pautas{pautas.length > 0 ? ` · ${pautas.length}` : ""}</ChipFiltro>
         <ChipFiltro ativo={sub === "timeline"} onClick={() => setSub("timeline")}>Timeline</ChipFiltro>
       </div>
@@ -1316,12 +1367,13 @@ function ConteudosScreen({ data, update, today, amanha }) {
         <div>
           <div className="mb-3">
             <AddInput placeholder="Novo conteúdo (título)…"
-              onAdd={(t) => update((d) => { d.conteudos.itens.unshift({ id: uid(), titulo: t, descricao: "", formato: "card", editoria: "Outros", link: "", pessoaId: null, demandaId: null, prazo: "", status: "ideia", urgencia: "media", criadoEm: hojeStr() }); })} />
-            <p className="text-xs text-gray-400 mt-1.5 px-1">Toca no conteúdo pra definir formato, editoria, etapa, prazo, pessoa e link.</p>
+              onAdd={(t) => { const novoId = uid(); update((d) => { d.conteudos.itens.unshift({ id: novoId, titulo: t, descricao: "", formato: "card", editoria: "Outros", link: "", pessoaId: null, demandaId: null, prazo: "", status: "ideia", urgencia: "media", criadoEm: hojeStr() }); }); setExpandida(novoId); }} />
+            <p className="text-xs text-gray-400 mt-1.5 px-1">Ao criar, já abre pra você preencher formato, editoria, etapa, prazo, pessoa e link.</p>
           </div>
           <div className="flex gap-2 mb-3 overflow-x-auto pb-1">
             <ChipFiltro ativo={filtroEtapa === "ativos"} onClick={() => setFiltroEtapa("ativos")}>Ativos</ChipFiltro>
-            {Object.entries(ETAPAS).map(([k, v]) => <ChipFiltro key={k} ativo={filtroEtapa === k} onClick={() => setFiltroEtapa(k)}>{v.label}</ChipFiltro>)}
+            <ChipFiltro ativo={filtroEtapa === ETAPA_FINAL} onClick={() => setFiltroEtapa(ETAPA_FINAL)}>Pronto</ChipFiltro>
+            {Object.entries(ETAPAS).filter(([k]) => k !== ETAPA_FINAL).map(([k, v]) => <ChipFiltro key={k} ativo={filtroEtapa === k} onClick={() => setFiltroEtapa(k)}>{v.label}</ChipFiltro>)}
             <ChipFiltro ativo={filtroEtapa === "todos"} onClick={() => setFiltroEtapa("todos")}>Todos</ChipFiltro>
             <select value={filtroEditoria} onChange={(e) => setFiltroEditoria(e.target.value)} className="text-sm bg-white border border-gray-200 rounded-xl px-3 py-2 outline-none flex-shrink-0 text-gray-600 font-medium">
               <option value="">Todas editorias</option>
@@ -1547,6 +1599,9 @@ export default function App() {
         if (dados.pessoas) dados.pessoas.forEach((p) => { if (!p.itens) p.itens = [...(p.devo || []), ...(p.falar || [])]; });
         if (dados.anotacoes) dados.anotacoes.forEach((n) => { if (n.html === undefined) n.html = (n.texto || "").split("\n").map((l) => escapeHtml(l)).join("<br>"); });
         dados.lixeira = (dados.lixeira || []).filter((i) => diasDesde(i.apagadoEm) < DIAS_LIXEIRA);
+        // Migra etapas antigas de conteúdo
+        const mapaEtapa = { gravado: "gravar", editado: "editar", noar: "pronto" };
+        (dados.conteudos?.itens || []).forEach((c) => { if (mapaEtapa[c.status]) c.status = mapaEtapa[c.status]; });
         if (!dados.pessoas || dados.pessoas.length === 0) {
           dados.pessoas = EQUIPE_INICIAL.map((e) => ({ id: uid(), nome: e.nome, cargo: e.cargo, equipe: true, fixado: true, itens: [] }));
         } else {
