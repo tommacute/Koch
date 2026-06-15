@@ -193,9 +193,7 @@ const FORMATO_COR = {
 };
 const ETAPAS = {
   ideia: { label: "Ideia", bg: "#EFEFEF", fg: "#444444" },
-  roteiro: { label: "Roteiro", bg: AMARELO_CLARO, fg: AMARELO_TEXTO },
-  gravar: { label: "Falta gravar", bg: "#FFE8CC", fg: "#B45309" },
-  editar: { label: "Falta editar", bg: "#CDE6FF", fg: "#1A73E8" },
+  producao: { label: "Em produção", bg: "#CDE6FF", fg: "#1A73E8" },
   pronto: { label: "Pronto", bg: "#E3F6E8", fg: "#1E8E3E" },
 };
 const ETAPA_FINAL = "pronto";
@@ -1227,7 +1225,16 @@ function ConteudoItem({ c, data, update, expandida, onToggle, today, amanha }) {
             {c.link && <a href={c.link} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="text-xs px-2.5 py-1 rounded-full font-bold" style={{ backgroundColor: AMARELO_CLARO, color: AMARELO_TEXTO }}>link ↗</a>}
           </div>
         </div>
-        <button onClick={onToggle} className="text-gray-300 text-base px-1 flex-shrink-0">{expandida ? "▴" : "▾"}</button>
+        <div className="flex items-center gap-1 flex-shrink-0">
+          {c.status !== ETAPA_FINAL ? (
+            <button onClick={(e) => { e.stopPropagation(); setCampo("status", ETAPA_FINAL); }}
+              className="text-xs font-bold px-2.5 py-1.5 rounded-lg" style={{ backgroundColor: "#E3F6E8", color: "#1E8E3E" }}>✓ Pronto</button>
+          ) : (
+            <button onClick={(e) => { e.stopPropagation(); setCampo("status", "ideia"); }}
+              className="text-xs font-bold px-2.5 py-1.5 rounded-lg bg-gray-100 text-gray-500">Reabrir</button>
+          )}
+          <button onClick={onToggle} className="text-gray-300 text-base px-1">{expandida ? "▴" : "▾"}</button>
+        </div>
       </div>
 
       {expandida && (
@@ -1692,7 +1699,7 @@ export default function App() {
         if (dados.anotacoes) dados.anotacoes.forEach((n) => { if (n.html === undefined) n.html = (n.texto || "").split("\n").map((l) => escapeHtml(l)).join("<br>"); });
         dados.lixeira = (dados.lixeira || []).filter((i) => diasDesde(i.apagadoEm) < DIAS_LIXEIRA);
         // Migra etapas antigas de conteúdo
-        const mapaEtapa = { gravado: "gravar", editado: "editar", noar: "pronto" };
+        const mapaEtapa = { roteiro: "producao", gravar: "producao", editar: "producao", gravado: "producao", editado: "producao", noar: "pronto" };
         (dados.conteudos?.itens || []).forEach((c) => { if (mapaEtapa[c.status]) c.status = mapaEtapa[c.status]; });
         if (!dados.pessoas || dados.pessoas.length === 0) {
           dados.pessoas = EQUIPE_INICIAL.map((e) => ({ id: uid(), nome: e.nome, cargo: e.cargo, equipe: true, fixado: true, itens: [] }));
