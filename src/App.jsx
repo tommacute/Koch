@@ -343,6 +343,8 @@ function DemandaItem({ d, data, update, expandida, onToggle, today, amanha }) {
         if (a.prazo) a.atrasadaNaEntrega = a.prazo < hojeStr();
       }
       if (valor !== "feito") { a.concluidoEm = null; a.atrasadaNaEntrega = false; }
+      if (valor === "fazendo" && a.status !== "fazendo") a.iniciadoFazendo = hojeStr();
+      if (valor !== "fazendo") a.iniciadoFazendo = null;
     }
     a[campo] = valor;
   });
@@ -638,6 +640,93 @@ function ProximosDias({ data, today }) {
 }
 
 // ============ Hoje ============
+// ============ Resumo do dia + Alertas proativos ============
+function gerarAlertas(data, today) {
+  const alertas = [];
+
+  // Demandas paradas em "fazendo" há muitos dias
+  data.demandas.filter((d) => d.status === "fazendo" && d.iniciadoFazendo).forEach((d) => {
+    const dias = diasDesde(d.iniciadoFazendo);
+    if (dias >= 5) alertas.push({ tipo: "parada", texto: `"${d.titulo}" está como "fazendo" há ${dias} dias.`, cor: "#B45309" });
+  });
+
+  // Demandas travadas
+  const travadas = data.demandas.filter((d) => d.status === "travado");
+  if (travadas.length > 0) alertas.push({ tipo: "travada", texto: `${travadas.length} demanda${travadas.length > 1 ? "s" : ""} travada${travadas.length > 1 ? "s" : ""} esperando alguém.`, cor: "#C0392B" });
+
+  // Pessoa sobrecarregada
+  data.pessoas.filter((p) => p.equipe).forEach((p) => {
+    const ativas = data.demandas.filter((d) => d.pessoaId === p.id && d.status !== "feito").length;
+    if (ativas >= 5) alertas.push({ tipo: "carga", texto: `${p.nome.split(" ")[0]} está com ${ativas} demandas ativas — vale checar a carga.`, cor: "#C0392B" });
+  });
+
+  // Sem criar conteúdo há muitos dias
+  const conteudos = data.conteudos?.itens || [];
+  if (conteudos.length > 0) {
+    const ultimoCriado = conteudos.map((c) => c.criadoEm).filter(Boolean).sort().reverse()[0];
+    if (ultimoCriado) {
+      const dias = diasDesde(ultimoCriado);
+      if (dias >= 3) alertas.push({ tipo: "conteudo", texto: `Faz ${dias} dias que você não cria um conteúdo novo.`, cor: "#6D4AFF" });
+    }
+  }
+
+  // Pessoa com pendência aberta (devo/falar) — itens marcados como pendentes
+  data.pessoas.forEach((p) => {
+    const pend = (p.itens || []).filter((i) => !i.feito).length;
+    if (pend >= 4) alertas.push({ tipo: "pessoa", texto: `Você tem ${pend} pendências anotadas com ${p.nome.split(" ")[0]}.`, cor: "#444" });
+  });
+
+  return alertas;
+}
+
+function ResumoDoDia({ data, today, amanha }) {
+  const atrasadas = data.demandas.filter((d) => d.status !== "feito" && d.prazo && d.prazo < today).length;
+  const hoje = data.demandas.filter((d) => d.status !== "feito" && d.prazo === today).length;
+  const deverTotal = data.lembretes.length;
+  const deverFeito = data.lembretes.filter((l) => data.lembreteChecks[l.id] === diaEfetivo()).length;
+  const conteudosHoje = (data.conteudos?.itens || []).filter((c) => c.status !== ETAPA_FINAL && c.prazo === today).length;
+
+  const partes = [];
+  if (atrasadas > 0) partes.push({ t: `${atrasadas} atrasada${atrasadas > 1 ? "s" : ""}`, forte: true });
+  if (hoje > 0) partes.push({ t: `${hoje} pra hoje`, forte: false });
+  if (conteudosHoje > 0) partes.push({ t: `${conteudosHoje} conteúdo${conteudosHoje > 1 ? "s" : ""} hoje`, forte: false });
+  if (deverTotal > 0 && deverFeito < deverTotal) partes.push({ t: `dever diário ${deverFeito}/${deverTotal}`, forte: false });
+
+  const alertas = gerarAlertas(data, today);
+  const hora = new Date().getHours();
+  const saud = hora < 12 ? "Bom dia" : hora < 18 ? "Boa tarde" : "Boa noite";
+
+  return (
+    <div className="rounded-2xl mb-5 overflow-hidden shadow-sm" style={{ backgroundColor: PRETO }}>
+      <div className="px-4 py-4">
+        <p className="text-xs font-bold mb-1" style={{ color: "#888" }}>{saud}, Thiago</p>
+        {partes.length === 0 ? (
+          <p className="text-base font-bold" style={{ color: AMARELO }}>Tudo limpo por aqui. Nada atrasado, nada vencendo. ✓</p>
+        ) : (
+          <p className="text-base font-bold leading-snug text-white">
+            Você tem {partes.map((p, i) => (
+              <React.Fragment key={i}>
+                <span style={p.forte ? { color: "#FF8A8A" } : { color: AMARELO }}>{p.t}</span>
+                {i < partes.length - 1 ? (i === partes.length - 2 ? " e " : ", ") : "."}
+              </React.Fragment>
+            ))}
+          </p>
+        )}
+      </div>
+      {alertas.length > 0 && (
+        <div className="px-4 pb-4 space-y-1.5">
+          {alertas.map((a, i) => (
+            <div key={i} className="flex items-start gap-2 rounded-xl px-3 py-2" style={{ backgroundColor: "rgba(255,255,255,0.07)" }}>
+              <span className="text-sm flex-shrink-0" style={{ color: AMARELO }}>!</span>
+              <span className="text-sm" style={{ color: "#DDD" }}>{a.texto}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function HojeScreen({ data, update, today, amanha }) {
   const [expandida, setExpandida] = useState(null);
   const atrasadas = data.demandas.filter((d) => d.status !== "feito" && d.prazo && d.prazo < today).sort(ordenarDemandas);
@@ -647,6 +736,7 @@ function HojeScreen({ data, update, today, amanha }) {
   return (
     <div>
       <ScreenTitle data={data} update={update} tabKey="hoje" />
+      <ResumoDoDia data={data} today={today} amanha={amanha} />
       <FuncoesFixas data={data} update={update} />
       <ProximosDias data={data} today={today} />
       {semNada && <Card className="px-4 py-6 text-center"><p className="text-gray-900 font-bold">Nada atrasado, nada vencendo</p><p className="text-gray-400 text-sm mt-1">Demandas atrasadas ou com prazo em 24h aparecem aqui.</p></Card>}
