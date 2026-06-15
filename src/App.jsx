@@ -1225,16 +1225,7 @@ function ConteudoItem({ c, data, update, expandida, onToggle, today, amanha }) {
             {c.link && <a href={c.link} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="text-xs px-2.5 py-1 rounded-full font-bold" style={{ backgroundColor: AMARELO_CLARO, color: AMARELO_TEXTO }}>link ↗</a>}
           </div>
         </div>
-        <div className="flex items-center gap-1 flex-shrink-0">
-          {c.status !== ETAPA_FINAL ? (
-            <button onClick={(e) => { e.stopPropagation(); setCampo("status", ETAPA_FINAL); }}
-              className="text-xs font-bold px-2.5 py-1.5 rounded-lg" style={{ backgroundColor: "#E3F6E8", color: "#1E8E3E" }}>✓ Pronto</button>
-          ) : (
-            <button onClick={(e) => { e.stopPropagation(); setCampo("status", "ideia"); }}
-              className="text-xs font-bold px-2.5 py-1.5 rounded-lg bg-gray-100 text-gray-500">Reabrir</button>
-          )}
-          <button onClick={onToggle} className="text-gray-300 text-base px-1">{expandida ? "▴" : "▾"}</button>
-        </div>
+        <button onClick={onToggle} className="text-gray-300 text-base px-1 flex-shrink-0">{expandida ? "▴" : "▾"}</button>
       </div>
 
       {expandida && (
