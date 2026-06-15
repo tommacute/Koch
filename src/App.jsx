@@ -353,10 +353,12 @@ function DemandaItem({ d, data, update, expandida, onToggle, today, amanha }) {
 
   let chipPrazo = null;
   if (d.prazo) {
-    if (atrasada) chipPrazo = <span className="text-xs px-2.5 py-1 rounded-full bg-red-50 text-red-600 font-bold">Atrasada · {fmtData(d.prazo)}</span>;
-    else if (d.prazo === today) chipPrazo = <span className="text-xs px-2.5 py-1 rounded-full font-bold" style={{ backgroundColor: AMARELO, color: PRETO }}>Hoje</span>;
-    else if (d.prazo === amanha) chipPrazo = <span className="text-xs px-2.5 py-1 rounded-full font-bold" style={{ backgroundColor: AMARELO_CLARO, color: AMARELO_TEXTO }}>Amanhã</span>;
-    else chipPrazo = <span className="text-xs px-2.5 py-1 rounded-full bg-gray-100 text-gray-500 font-medium">{fmtData(d.prazo)}</span>;
+    if (atrasada) chipPrazo = <span className="text-xs px-2.5 py-1 rounded-lg bg-red-600 text-white font-bold">⏰ Atrasada · {fmtData(d.prazo)}</span>;
+    else if (d.prazo === today) chipPrazo = <span className="text-xs px-2.5 py-1 rounded-lg font-bold" style={{ backgroundColor: AMARELO, color: PRETO }}>📅 Hoje</span>;
+    else if (d.prazo === amanha) chipPrazo = <span className="text-xs px-2.5 py-1 rounded-lg font-bold" style={{ backgroundColor: AMARELO_CLARO, color: AMARELO_TEXTO }}>📅 Amanhã</span>;
+    else chipPrazo = <span className="text-xs px-2.5 py-1 rounded-lg font-bold border border-gray-300 text-gray-600 bg-white">📅 {fmtData(d.prazo)}</span>;
+  } else {
+    chipPrazo = <span className="text-xs px-2 py-1 rounded-lg text-gray-300">sem prazo</span>;
   }
 
   return (
@@ -1197,10 +1199,10 @@ function ConteudoItem({ c, data, update, expandida, onToggle, today, amanha }) {
 
   let chipPrazo = null;
   if (c.prazo) {
-    if (atrasado) chipPrazo = <span className="text-xs px-2.5 py-1 rounded-full bg-red-50 text-red-600 font-bold">Atrasado · {fmtData(c.prazo)}</span>;
-    else if (c.prazo === today) chipPrazo = <span className="text-xs px-2.5 py-1 rounded-full font-bold" style={{ backgroundColor: AMARELO, color: PRETO }}>Hoje</span>;
-    else if (c.prazo === amanha) chipPrazo = <span className="text-xs px-2.5 py-1 rounded-full font-bold" style={{ backgroundColor: AMARELO_CLARO, color: AMARELO_TEXTO }}>Amanhã</span>;
-    else chipPrazo = <span className="text-xs px-2.5 py-1 rounded-full bg-gray-100 text-gray-500 font-medium">{fmtData(c.prazo)}</span>;
+    if (atrasado) chipPrazo = <span className="text-xs px-2.5 py-1 rounded-lg bg-red-600 text-white font-bold">⏰ Atrasado · {fmtData(c.prazo)}</span>;
+    else if (c.prazo === today) chipPrazo = <span className="text-xs px-2.5 py-1 rounded-lg font-bold" style={{ backgroundColor: AMARELO, color: PRETO }}>📅 Hoje</span>;
+    else if (c.prazo === amanha) chipPrazo = <span className="text-xs px-2.5 py-1 rounded-lg font-bold" style={{ backgroundColor: AMARELO_CLARO, color: AMARELO_TEXTO }}>📅 Amanhã</span>;
+    else chipPrazo = <span className="text-xs px-2.5 py-1 rounded-lg font-bold border border-gray-300 text-gray-600 bg-white">📅 {fmtData(c.prazo)}</span>;
   }
 
   const fc = FORMATO_COR[c.formato] || { bg: "#FFFFFF", chip: "#444" };
@@ -1232,45 +1234,69 @@ function ConteudoItem({ c, data, update, expandida, onToggle, today, amanha }) {
         <div className="mt-3 space-y-3">
           <div>
             <label className="text-xs font-semibold text-gray-500 block mb-1">Título</label>
-            <EditableText value={c.titulo} onSave={(v) => setCampo("titulo", v)} className="text-base text-gray-900 block bg-gray-50 rounded-lg px-2.5 py-2" />
+            <EditableText value={c.titulo} onSave={(v) => setCampo("titulo", v)} className="text-base text-gray-900 block bg-white rounded-lg px-2.5 py-2" />
           </div>
           <div>
             <label className="text-xs font-semibold text-gray-500 block mb-1">Descrição</label>
             <textarea value={c.descricao || ""} onChange={(e) => setCampo("descricao", e.target.value)} placeholder="Descreve a ideia, o roteiro, a referência…"
-              className="w-full bg-gray-50 rounded-lg px-2.5 py-2 text-base text-gray-900 outline-none resize-none" rows={3} />
+              className="w-full bg-white rounded-lg px-2.5 py-2 text-base text-gray-900 outline-none resize-none" rows={3} />
           </div>
+
+          <div>
+            <label className="text-xs font-semibold text-gray-500 block mb-1">Etapa</label>
+            <div className="flex gap-1.5 overflow-x-auto pb-1">
+              {Object.entries(ETAPAS).map(([k, v]) => (
+                <button key={k} onClick={() => setCampo("status", k)} className="px-3 py-2 rounded-lg text-sm font-bold flex-shrink-0"
+                  style={c.status === k ? { backgroundColor: v.bg, color: v.fg, outline: `2px solid ${v.fg}` } : { backgroundColor: "#FFF", color: "#999" }}>{v.label}</button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold text-gray-500 block mb-1">Formato</label>
+            <div className="flex gap-1.5 overflow-x-auto pb-1">
+              {Object.entries(FORMATOS).map(([k, v]) => {
+                const fcor = FORMATO_COR[k] || { bg: "#FFF", chip: "#444" };
+                return (
+                  <button key={k} onClick={() => setCampo("formato", k)} className="px-3 py-2 rounded-lg text-sm font-bold flex-shrink-0"
+                    style={c.formato === k ? { backgroundColor: fcor.chip, color: "#FFF" } : { backgroundColor: "#FFF", color: "#999" }}>{v}</button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold text-gray-500 block mb-1">Urgência</label>
+            <div className="flex gap-2">
+              {Object.entries(PRIORIDADES).map(([k, v]) => (
+                <button key={k} onClick={() => setCampo("urgencia", k)} className="flex-1 py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-1.5"
+                  style={c.urgencia === k ? { backgroundColor: v.bg, color: v.fg, outline: `2px solid ${v.fg}` } : { backgroundColor: "#FFF", color: "#999" }}>
+                  <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: v.fg }}></span>{v.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold text-gray-500 block mb-1">Prazo</label>
+            <input type="date" value={c.prazo || ""} onChange={(e) => setCampo("prazo", e.target.value)} className="w-full bg-white rounded-lg px-3 py-2.5 text-base outline-none" />
+            <div className="flex gap-2 mt-2">
+              <button onClick={() => setCampo("prazo", amanha)} className="text-xs font-bold px-3 py-1.5 rounded-lg bg-white text-gray-600">Amanhã</button>
+              <button onClick={() => { const dd = new Date(); dd.setDate(dd.getDate() + 7); setCampo("prazo", isoData(dd)); }} className="text-xs font-bold px-3 py-1.5 rounded-lg bg-white text-gray-600">+7 dias</button>
+              {c.prazo && <button onClick={() => setCampo("prazo", "")} className="text-xs font-bold px-3 py-1.5 rounded-lg bg-white text-gray-400">Sem prazo</button>}
+            </div>
+          </div>
+
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs font-semibold text-gray-500 block mb-1">Formato</label>
-              <select value={c.formato || "card"} onChange={(e) => setCampo("formato", e.target.value)} className="w-full bg-gray-100 rounded-lg px-2 py-2 text-sm outline-none">
-                {Object.entries(FORMATOS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-              </select>
-            </div>
-            <div>
               <label className="text-xs font-semibold text-gray-500 block mb-1">Editoria</label>
-              <select value={c.editoria || "Outros"} onChange={(e) => setCampo("editoria", e.target.value)} className="w-full bg-gray-100 rounded-lg px-2 py-2 text-sm outline-none">
+              <select value={c.editoria || "Outros"} onChange={(e) => setCampo("editoria", e.target.value)} className="w-full bg-white rounded-lg px-2 py-2 text-sm outline-none">
                 {EDITORIAS.map((e2) => <option key={e2} value={e2}>{e2}</option>)}
               </select>
             </div>
             <div>
-              <label className="text-xs font-semibold text-gray-500 block mb-1">Etapa</label>
-              <select value={c.status || "ideia"} onChange={(e) => setCampo("status", e.target.value)} className="w-full bg-gray-100 rounded-lg px-2 py-2 text-sm outline-none">
-                {Object.entries(ETAPAS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="text-xs font-semibold text-gray-500 block mb-1">Urgência</label>
-              <select value={c.urgencia || "media"} onChange={(e) => setCampo("urgencia", e.target.value)} className="w-full bg-gray-100 rounded-lg px-2 py-2 text-sm outline-none">
-                {Object.entries(PRIORIDADES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="text-xs font-semibold text-gray-500 block mb-1">Prazo</label>
-              <input type="date" value={c.prazo || ""} onChange={(e) => setCampo("prazo", e.target.value)} className="w-full bg-gray-100 rounded-lg px-2 py-1.5 text-sm outline-none" />
-            </div>
-            <div>
               <label className="text-xs font-semibold text-gray-500 block mb-1">Demandar para</label>
-              <select value={c.pessoaId || ""} onChange={(e) => setCampo("pessoaId", e.target.value || null)} className="w-full bg-gray-100 rounded-lg px-2 py-2 text-sm outline-none">
+              <select value={c.pessoaId || ""} onChange={(e) => setCampo("pessoaId", e.target.value || null)} className="w-full bg-white rounded-lg px-2 py-2 text-sm outline-none">
                 <option value="">Ninguém</option>
                 {data.pessoas.map((p) => <option key={p.id} value={p.id}>{p.nome}</option>)}
               </select>
@@ -1279,9 +1305,9 @@ function ConteudoItem({ c, data, update, expandida, onToggle, today, amanha }) {
           <div>
             <label className="text-xs font-semibold text-gray-500 block mb-1">Link</label>
             <input type="url" value={c.link || ""} onChange={(e) => setCampo("link", e.target.value)} placeholder="https://…"
-              className="w-full bg-gray-100 rounded-lg px-2.5 py-2 text-sm outline-none" />
+              className="w-full bg-white rounded-lg px-2.5 py-2 text-sm outline-none" />
           </div>
-          {c.pessoaId && <p className="text-xs text-gray-400">Esse conteúdo vira demanda automática pra {pessoa ? pessoa.nome : "a pessoa"} — aparece em Pessoas e em Demandas › Pessoas. Quando marcar "No ar", a demanda fecha sozinha.</p>}
+          {c.pessoaId && <p className="text-xs text-gray-400">Esse conteúdo vira demanda automática pra {pessoa ? pessoa.nome : "a pessoa"} — aparece em Pessoas e em Demandas › Pessoas. Quando marcar "Pronto", a demanda fecha sozinha.</p>}
           <div className="flex justify-end">
             <ConfirmButton label="Apagar conteúdo" confirmLabel="Confirmar exclusão"
               className="text-xs font-semibold text-red-500 px-2.5 py-1.5 rounded-lg hover:bg-red-50"
@@ -1432,9 +1458,9 @@ function ConteudosScreen({ data, update, today, amanha }) {
       {sub === "conteudos" && (
         <div>
           <div className="mb-3">
-            <AddInput placeholder="Novo conteúdo (título)…"
-              onAdd={(t) => { const novoId = uid(); update((d) => { d.conteudos.itens.unshift({ id: novoId, titulo: t, descricao: "", formato: "card", editoria: "Outros", link: "", pessoaId: null, demandaId: null, prazo: "", status: "ideia", urgencia: "media", criadoEm: hojeStr() }); }); setExpandida(novoId); }} />
-            <p className="text-xs text-gray-400 mt-1.5 px-1">Ao criar, já abre pra você preencher formato, editoria, etapa, prazo, pessoa e link.</p>
+            <AddInput placeholder='Novo conteúdo… (ex.: "card segurança sexta")'
+              onAdd={(t) => { const novoId = uid(); const p = parseDemanda(t); update((d) => { d.conteudos.itens.unshift({ id: novoId, titulo: p.titulo, descricao: "", formato: "card", editoria: "Outros", link: "", pessoaId: null, demandaId: null, prazo: p.prazo, status: "ideia", urgencia: p.prioridade, criadoEm: hojeStr() }); }); setExpandida(novoId); }} />
+            <p className="text-xs text-gray-400 mt-1.5 px-1">Pode escrever prazo e urgência no texto, ou ajustar abaixo com um toque ao abrir.</p>
           </div>
           <div className="flex gap-2 mb-3 overflow-x-auto pb-1">
             <ChipFiltro ativo={filtroEtapa === "ativos"} onClick={() => setFiltroEtapa("ativos")}>Ativos</ChipFiltro>
