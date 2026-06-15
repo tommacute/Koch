@@ -82,6 +82,53 @@ const jogarNaLixeira = (d, tipo, payload, extra) => {
   d.lixeira.unshift({ id: uid(), tipo, payload, extra: extra || null, apagadoEm: hojeStr() });
 };
 
+// Entrada inteligente: lê prazo e prioridade do próprio texto da demanda.
+// Ex.: "relatório amanhã alta" -> prazo amanhã, prioridade alta
+function parseDemanda(texto) {
+  let t = " " + texto + " ";
+  let prazo = "";
+  let prioridade = null;
+  const hoje = new Date();
+  const setDelta = (n) => { const d = new Date(); d.setDate(d.getDate() + n); return isoData(d); };
+
+  // prioridade
+  if (/\b(alta|urgente|urgência)\b/i.test(t)) { prioridade = "alta"; t = t.replace(/\b(alta|urgente|urgência)\b/i, " "); }
+  else if (/\b(baixa|tranquilo|tranquila)\b/i.test(t)) { prioridade = "baixa"; t = t.replace(/\b(baixa|tranquilo|tranquila)\b/i, " "); }
+  else if (/\b(média|media)\b/i.test(t)) { prioridade = "media"; t = t.replace(/\b(média|media)\b/i, " "); }
+
+  // prazo relativo
+  if (/\bhoje\b/i.test(t)) { prazo = setDelta(0); t = t.replace(/\bhoje\b/i, " "); }
+  else if (/\bamanhã\b|\bamanha\b/i.test(t)) { prazo = setDelta(1); t = t.replace(/\bamanhã\b|\bamanha\b/i, " "); }
+  else if (/\bdepois de amanhã\b|\bdepois de amanha\b/i.test(t)) { prazo = setDelta(2); t = t.replace(/\bdepois de amanhã\b|\bdepois de amanha\b/i, " "); }
+  else {
+    const diasSemana = { domingo: 0, "segunda": 1, "terça": 2, "terca": 2, "quarta": 3, "quinta": 4, "sexta": 5, "sábado": 6, "sabado": 6 };
+    for (const [nome, idx] of Object.entries(diasSemana)) {
+      const re = new RegExp("\\b" + nome + "(-feira)?\\b", "i");
+      if (re.test(t)) {
+        let delta = (idx - hoje.getDay() + 7) % 7;
+        if (delta === 0) delta = 7;
+        prazo = setDelta(delta);
+        t = t.replace(re, " ");
+        break;
+      }
+    }
+  }
+  // data dd/mm
+  const md = t.match(/\b(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?\b/);
+  if (md && !prazo) {
+    const dia = +md[1], mes = +md[2];
+    let ano = md[3] ? +md[3] : hoje.getFullYear();
+    if (ano < 100) ano += 2000;
+    let cand = new Date(ano, mes - 1, dia);
+    if (!md[3] && cand < hoje) cand = new Date(ano + 1, mes - 1, dia);
+    prazo = isoData(cand);
+    t = t.replace(md[0], " ");
+  }
+
+  const titulo = t.replace(/\s+/g, " ").trim();
+  return { titulo: titulo || texto.trim(), prazo, prioridade: prioridade || "media" };
+}
+
 const PRIORIDADES = {
   alta: { label: "Alta", bg: "#FDE3E3", fg: "#C0392B" },
   media: { label: "Média", bg: AMARELO_CLARO, fg: AMARELO_TEXTO },
@@ -333,6 +380,40 @@ function DemandaItem({ d, data, update, expandida, onToggle, today, amanha }) {
       {expandida && (
         <div className="mt-3 ml-10 space-y-3">
           <EditableText value={d.titulo} onSave={(v) => setCampo("titulo", v)} className="text-base text-gray-900 block bg-gray-50 rounded-lg px-2.5 py-2" />
+
+          <div>
+            <label className="text-xs font-semibold text-gray-500 block mb-1">Prioridade</label>
+            <div className="flex gap-2">
+              {Object.entries(PRIORIDADES).map(([k, v]) => (
+                <button key={k} onClick={() => setCampo("prioridade", k)}
+                  className="flex-1 py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-1.5"
+                  style={d.prioridade === k ? { backgroundColor: v.bg, color: v.fg, outline: `2px solid ${v.fg}` } : { backgroundColor: "#F2F2F2", color: "#888" }}>
+                  <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: v.fg }}></span>{v.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold text-gray-500 block mb-1">Tipo</label>
+            <div className="flex gap-2">
+              <button onClick={() => setCampo("esfera", "trabalho")} className="flex-1 py-2 rounded-lg text-sm font-bold"
+                style={(d.esfera || "trabalho") !== "pessoal" ? { backgroundColor: PRETO, color: AMARELO } : { backgroundColor: "#F2F2F2", color: "#888" }}>Trabalho</button>
+              <button onClick={() => setCampo("esfera", "pessoal")} className="flex-1 py-2 rounded-lg text-sm font-bold"
+                style={(d.esfera || "trabalho") === "pessoal" ? { backgroundColor: "#0B8043", color: "#FFF" } : { backgroundColor: "#F2F2F2", color: "#888" }}>Vida pessoal</button>
+            </div>
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold text-gray-500 block mb-1">Prazo</label>
+            <input type="date" value={d.prazo || ""} onChange={(e) => setCampo("prazo", e.target.value)} className="w-full bg-gray-100 rounded-lg px-3 py-2.5 text-base outline-none" />
+            <div className="flex gap-2 mt-2">
+              <button onClick={() => setCampo("prazo", amanha)} className="text-xs font-bold px-3 py-1.5 rounded-lg bg-gray-100 text-gray-600">Amanhã</button>
+              <button onClick={() => { const dd = new Date(); dd.setDate(dd.getDate() + 7); setCampo("prazo", isoData(dd)); }} className="text-xs font-bold px-3 py-1.5 rounded-lg bg-gray-100 text-gray-600">+7 dias</button>
+              {d.prazo && <button onClick={() => setCampo("prazo", "")} className="text-xs font-bold px-3 py-1.5 rounded-lg bg-gray-100 text-gray-400">Sem prazo</button>}
+            </div>
+          </div>
+
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-xs font-semibold text-gray-500 block mb-1">Status</label>
@@ -341,30 +422,14 @@ function DemandaItem({ d, data, update, expandida, onToggle, today, amanha }) {
               </select>
             </div>
             <div>
-              <label className="text-xs font-semibold text-gray-500 block mb-1">Prioridade</label>
-              <select value={d.prioridade} onChange={(e) => setCampo("prioridade", e.target.value)} className="w-full bg-gray-100 rounded-lg px-2 py-2 text-sm outline-none">
-                {Object.entries(PRIORIDADES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="text-xs font-semibold text-gray-500 block mb-1">Prazo</label>
-              <input type="date" value={d.prazo || ""} onChange={(e) => setCampo("prazo", e.target.value)} className="w-full bg-gray-100 rounded-lg px-2 py-1.5 text-sm outline-none" />
-            </div>
-            <div>
               <label className="text-xs font-semibold text-gray-500 block mb-1">Pessoa</label>
               <select value={d.pessoaId || ""} onChange={(e) => setCampo("pessoaId", e.target.value || null)} className="w-full bg-gray-100 rounded-lg px-2 py-2 text-sm outline-none">
                 <option value="">Ninguém</option>
                 {data.pessoas.map((p) => <option key={p.id} value={p.id}>{p.nome}</option>)}
               </select>
             </div>
-            <div>
-              <label className="text-xs font-semibold text-gray-500 block mb-1">Tipo</label>
-              <select value={d.esfera || "trabalho"} onChange={(e) => setCampo("esfera", e.target.value)} className="w-full bg-gray-100 rounded-lg px-2 py-2 text-sm outline-none">
-                <option value="trabalho">Trabalho</option>
-                <option value="pessoal">Vida pessoal</option>
-              </select>
-            </div>
           </div>
+
           <div className="flex justify-between items-center">
             <button onClick={toggleFav} className="text-xs font-bold px-2.5 py-1.5 rounded-lg" style={{ backgroundColor: d.fav ? AMARELO : "#F2F2F2", color: d.fav ? PRETO : "#666" }}>
               {d.fav ? "★ Favoritada" : "☆ Favoritar"}
@@ -404,7 +469,8 @@ function DemandasScreen({ data, update, today, amanha }) {
     <div>
       <ScreenTitle data={data} update={update} tabKey="demandas" />
       <div className="mb-3">
-        <AddInput placeholder="Nova demanda…" onAdd={(t) => { const novoId = uid(); update((d) => { d.demandas.unshift({ id: novoId, titulo: t, prazo: "", prioridade: "media", status: "afazer", pessoaId: null }); }); setExpandida(novoId); }} />
+        <AddInput placeholder='Nova demanda… (ex.: "relatório sexta alta")' onAdd={(t) => { const novoId = uid(); const p = parseDemanda(t); update((d) => { d.demandas.unshift({ id: novoId, titulo: p.titulo, prazo: p.prazo, prioridade: p.prioridade, status: "afazer", pessoaId: null, esfera: "trabalho" }); }); setExpandida(novoId); }} />
+        <p className="text-xs text-gray-400 mt-1.5 px-1">Dá pra escrever o prazo e a prioridade no texto ("sexta", "amanhã", "12/08", "alta") — ou só o título e ajustar abaixo com um toque.</p>
       </div>
       <div className="flex gap-2 mb-3 overflow-x-auto pb-1">
         {filtros.map((f) => <ChipFiltro key={f.k} ativo={filtro === f.k} onClick={() => setFiltro(f.k)}>{f.label}</ChipFiltro>)}
@@ -455,7 +521,7 @@ function DemandasScreen({ data, update, today, amanha }) {
 
 // ============ Funções Fixas ============
 function FuncoesFixas({ data, update }) {
-  const [aberto, setAberto] = useState(false);
+  const [aberto, setAberto] = useState(true);
   const diaFx = diaEfetivo();
   const toggle = (id) => update((d) => { if (d.lembreteChecks[id] === diaFx) delete d.lembreteChecks[id]; else d.lembreteChecks[id] = diaFx; });
   const feitos = data.lembretes.filter((l) => data.lembreteChecks[l.id] === diaFx).length;
