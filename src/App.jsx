@@ -693,13 +693,11 @@ function ResumoDoDia({ data, today, amanha }) {
   if (deverTotal > 0 && deverFeito < deverTotal) partes.push({ t: `dever diário ${deverFeito}/${deverTotal}`, forte: false });
 
   const alertas = gerarAlertas(data, today);
-  const hora = new Date().getHours();
-  const saud = hora < 12 ? "Bom dia" : hora < 18 ? "Boa tarde" : "Boa noite";
 
   return (
     <div className="rounded-2xl mb-5 overflow-hidden shadow-sm" style={{ backgroundColor: PRETO }}>
       <div className="px-4 py-4">
-        <p className="text-xs font-bold mb-1" style={{ color: "#888" }}>{saud}, Thiago</p>
+        <p className="text-xs font-bold mb-1" style={{ color: "#888" }}>Bom dia, Thiago</p>
         {partes.length === 0 ? (
           <p className="text-base font-bold" style={{ color: AMARELO }}>Tudo limpo por aqui. Nada atrasado, nada vencendo. ✓</p>
         ) : (
@@ -728,6 +726,9 @@ function ResumoDoDia({ data, today, amanha }) {
 }
 
 function HojeScreen({ data, update, today, amanha }) {
+  const agora = new Date();
+  const minutos = agora.getHours() * 60 + agora.getMinutes();
+  const mostrarResumo = minutos >= 360 && minutos <= 690; // 06:00 às 11:30
   const [expandida, setExpandida] = useState(null);
   const atrasadas = data.demandas.filter((d) => d.status !== "feito" && d.prazo && d.prazo < today).sort(ordenarDemandas);
   const vence24h = data.demandas.filter((d) => d.status !== "feito" && (d.prazo === today || d.prazo === amanha)).sort(ordenarDemandas);
@@ -736,7 +737,7 @@ function HojeScreen({ data, update, today, amanha }) {
   return (
     <div>
       <ScreenTitle data={data} update={update} tabKey="hoje" />
-      <ResumoDoDia data={data} today={today} amanha={amanha} />
+      {mostrarResumo && <ResumoDoDia data={data} today={today} amanha={amanha} />}
       <FuncoesFixas data={data} update={update} />
       <ProximosDias data={data} today={today} />
       {semNada && <Card className="px-4 py-6 text-center"><p className="text-gray-900 font-bold">Nada atrasado, nada vencendo</p><p className="text-gray-400 text-sm mt-1">Demandas atrasadas ou com prazo em 24h aparecem aqui.</p></Card>}
