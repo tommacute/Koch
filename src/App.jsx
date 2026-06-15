@@ -213,8 +213,14 @@ const corDaEditoria = (nome) => {
 };
 
 const TEMAS_TIMELINE = [
-  "política Rio de Janeiro", "segurança pública RJ", "preço gasolina Rio de Janeiro",
-  "posto de gasolina RJ", "bets apostas", "jogo do tigrinho", "feminicídio Rio de Janeiro",
+  { label: "Política RJ", q: "política Rio de Janeiro" },
+  { label: "Segurança pública", q: "segurança pública Rio de Janeiro violência" },
+  { label: "Gasolina / postos", q: "preço gasolina posto combustível Rio de Janeiro" },
+  { label: "Bets / apostas", q: "bets apostas esportivas regulação Brasil" },
+  { label: "Jogo do tigrinho", q: "jogo do tigrinho golpe apostas" },
+  { label: "Feminicídio", q: "feminicídio violência contra mulher Rio de Janeiro" },
+  { label: "Alerj", q: "Alerj Assembleia Legislativa Rio de Janeiro" },
+  { label: "Transporte / Detran", q: "Detran transporte trânsito Rio de Janeiro" },
 ];
 
 const ORDEM_TABS = ["hoje", "captura", "demandas", "pessoas", "anotacoes", "conteudos", "pessoal"];
@@ -1451,51 +1457,136 @@ function DatasChave({ data, update, today }) {
   );
 }
 
+// Tenta buscar notícias reais via Google Notícias RSS, passando por proxies CORS.
+// Se tudo falhar, devolve null e a tela oferece o caminho manual.
+async function buscarNoticias(query) {
+  const rss = `https://news.google.com/rss/search?q=${encodeURIComponent(query + " when:7d")}&hl=pt-BR&gl=BR&ceid=BR:pt-419`;
+  const proxies = [
+    (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+    (u) => `https://corsproxy.io/?url=${encodeURIComponent(u)}`,
+    (u) => `https://thingproxy.freeboard.io/fetch/${u}`,
+  ];
+  for (const mk of proxies) {
+    try {
+      const ctrl = new AbortController();
+      const tid = setTimeout(() => ctrl.abort(), 12000);
+      const r = await fetch(mk(rss), { signal: ctrl.signal });
+      clearTimeout(tid);
+      if (!r.ok) continue;
+      const xml = await r.text();
+      const doc = new DOMParser().parseFromString(xml, "text/xml");
+      const items = [...doc.querySelectorAll("item")].slice(0, 12).map((it) => {
+        const titleRaw = it.querySelector("title")?.textContent || "";
+        const link = it.querySelector("link")?.textContent || "";
+        const pub = it.querySelector("pubDate")?.textContent || "";
+        const sourceEl = it.querySelector("source");
+        let fonte = sourceEl ? sourceEl.textContent : "";
+        let titulo = titleRaw;
+        // O Google costuma colocar " - Fonte" no fim do título
+        const sep = titleRaw.lastIndexOf(" - ");
+        if (!fonte && sep > 0) { fonte = titleRaw.slice(sep + 3); titulo = titleRaw.slice(0, sep); }
+        else if (fonte && titulo.endsWith(" - " + fonte)) titulo = titulo.slice(0, -(fonte.length + 3));
+        return { titulo: titulo.trim(), link, fonte: (fonte || "").trim(), pub };
+      });
+      if (items.length > 0) return items;
+    } catch (e) { /* tenta o próximo proxy */ }
+  }
+  return null;
+}
+
+function tempoRelativo(pub) {
+  if (!pub) return "";
+  const d = new Date(pub);
+  if (isNaN(d)) return "";
+  const horas = Math.floor((Date.now() - d.getTime()) / 3600000);
+  if (horas < 1) return "agora há pouco";
+  if (horas < 24) return `há ${horas}h`;
+  const dias = Math.floor(horas / 24);
+  return `há ${dias}d`;
+}
+
 function TimelineModulo({ update, goToPautas }) {
   const [tema, setTema] = useState("");
-  const [colar, setColar] = useState("");
-  const [colarLink, setColarLink] = useState("");
+  const [carregando, setCarregando] = useState(false);
+  const [resultados, setResultados] = useState(null);
+  const [falhou, setFalhou] = useState(false);
+  const [temaAtivo, setTemaAtivo] = useState("");
 
-  const buscar = (q) => {
-    const query = encodeURIComponent(q + " quando:7d");
-    window.open(`https://news.google.com/search?q=${query}&hl=pt-BR&gl=BR&ceid=BR:pt-419`, "_blank");
+  const abrirNoGoogle = (q) => window.open(`https://news.google.com/search?q=${encodeURIComponent(q + " when:7d")}&hl=pt-BR&gl=BR&ceid=BR:pt-419`, "_blank");
+
+  const carregar = async (q, label) => {
+    setCarregando(true); setFalhou(false); setResultados(null); setTemaAtivo(label || q);
+    const r = await buscarNoticias(q);
+    if (r && r.length > 0) setResultados(r);
+    else setFalhou(true);
+    setCarregando(false);
   };
 
-  const mandarPraPauta = () => {
-    const texto = colar.trim();
-    if (!texto) return;
-    update((d) => { d.conteudos.pautas.unshift({ id: uid(), texto, editoria: "Outros", link: colarLink.trim(), criadoEm: hojeStr() }); });
-    setColar(""); setColarLink("");
-    goToPautas();
+  const mandarPraPauta = (n) => {
+    update((d) => { d.conteudos.pautas.unshift({ id: uid(), texto: n.titulo, editoria: "Outros", link: n.link || "", criadoEm: hojeStr() }); });
   };
 
   return (
     <div>
       <Card className="p-4 mb-4">
-        <h3 className="text-sm font-black text-gray-900 uppercase tracking-wide mb-1">Buscar notícias</h3>
-        <p className="text-xs text-gray-400 mb-3">Abre as notícias dos últimos 7 dias no Google Notícias. Achou algo que rende? Cola embaixo e manda pra pauta.</p>
+        <h3 className="text-sm font-black text-gray-900 uppercase tracking-wide mb-1">O que está em alta</h3>
+        <p className="text-xs text-gray-400 mb-3">Toque num tema pra puxar as notícias dos últimos 7 dias. Achou algo que rende? Manda direto pra pauta.</p>
         <div className="flex flex-wrap gap-2 mb-3">
           {TEMAS_TIMELINE.map((t) => (
-            <button key={t} onClick={() => buscar(t)} className="text-xs px-3 py-1.5 rounded-full font-bold" style={{ backgroundColor: AMARELO_CLARO, color: AMARELO_TEXTO }}>{t} ↗</button>
+            <button key={t.label} onClick={() => carregar(t.q, t.label)}
+              className="text-xs px-3 py-1.5 rounded-full font-bold"
+              style={temaAtivo === t.label ? { backgroundColor: PRETO, color: AMARELO } : { backgroundColor: AMARELO_CLARO, color: AMARELO_TEXTO }}>
+              {t.label}
+            </button>
           ))}
         </div>
         <div className="flex gap-2">
-          <input value={tema} onChange={(e) => setTema(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && tema.trim()) buscar(tema.trim()); }}
+          <input value={tema} onChange={(e) => setTema(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && tema.trim()) carregar(tema.trim(), tema.trim()); }}
             placeholder="Buscar outro tema…" className="flex-1 min-w-0 bg-gray-100 rounded-xl px-3.5 py-2.5 text-base outline-none" />
-          <button onClick={() => tema.trim() && buscar(tema.trim())} className="px-4 py-2.5 rounded-xl text-sm font-bold flex-shrink-0" style={{ backgroundColor: PRETO, color: AMARELO }}>Buscar ↗</button>
+          <button onClick={() => tema.trim() && carregar(tema.trim(), tema.trim())} className="px-4 py-2.5 rounded-xl text-sm font-bold flex-shrink-0" style={{ backgroundColor: PRETO, color: AMARELO }}>Buscar</button>
         </div>
       </Card>
 
-      <Card className="p-4">
-        <h3 className="text-sm font-black text-gray-900 uppercase tracking-wide mb-1">Mandar pra pauta</h3>
-        <p className="text-xs text-gray-400 mb-3">Achou uma notícia? Cola o resumo aqui e o link da fonte. Vira pauta no seu banco de ideias.</p>
-        <textarea value={colar} onChange={(e) => setColar(e.target.value)} placeholder="Resumo da notícia / ideia de conteúdo…"
-          className="w-full bg-gray-100 rounded-xl px-3.5 py-2.5 text-base outline-none resize-none mb-2" rows={3} />
-        <input value={colarLink} onChange={(e) => setColarLink(e.target.value)} placeholder="Link da fonte (opcional)"
-          className="w-full bg-gray-100 rounded-xl px-3.5 py-2.5 text-base outline-none mb-3" />
-        <button onClick={mandarPraPauta} className="w-full py-2.5 rounded-xl text-sm font-black" style={{ backgroundColor: AMARELO, color: PRETO }}>→ Mandar pra Pauta</button>
-      </Card>
-      <p className="text-xs text-gray-400 mt-3 px-1">A busca automática de notícias dentro do app virá numa próxima etapa. Por ora, isso te dá o caminho rápido.</p>
+      {carregando && (
+        <Card className="p-6 text-center mb-4">
+          <p className="text-sm text-gray-500 font-bold">Buscando notícias sobre {temaAtivo}…</p>
+          <p className="text-xs text-gray-400 mt-1">Pode levar alguns segundos.</p>
+        </Card>
+      )}
+
+      {falhou && !carregando && (
+        <Card className="p-4 mb-4" style={{ borderColor: "#F5C6C6" }}>
+          <p className="text-sm text-gray-900 font-bold mb-1">Não consegui puxar as notícias agora</p>
+          <p className="text-xs text-gray-400 mb-3">O serviço que busca as notícias pode estar instável. Você ainda pode abrir direto no Google Notícias:</p>
+          <button onClick={() => abrirNoGoogle(temaAtivo)} className="w-full py-2.5 rounded-xl text-sm font-black" style={{ backgroundColor: AMARELO, color: PRETO }}>Abrir "{temaAtivo}" no Google ↗</button>
+        </Card>
+      )}
+
+      {resultados && !carregando && (
+        <div className="mb-4">
+          <div className="flex items-center justify-between mb-2 px-1">
+            <h3 className="text-sm font-black text-gray-500 uppercase tracking-wide">{temaAtivo} · {resultados.length}</h3>
+            <button onClick={() => abrirNoGoogle(temaAtivo)} className="text-xs font-bold" style={{ color: AMARELO_TEXTO }}>ver mais no Google ↗</button>
+          </div>
+          <Card className="divide-y divide-gray-100">
+            {resultados.map((n, i) => (
+              <div key={i} className="px-4 py-3.5">
+                <a href={n.link} target="_blank" rel="noreferrer" className="text-base text-gray-900 font-medium block leading-snug hover:underline">{n.titulo}</a>
+                <div className="flex items-center gap-2 mt-1.5">
+                  {n.fonte && <span className="text-xs px-2 py-0.5 rounded-full font-bold bg-gray-100 text-gray-600">{n.fonte}</span>}
+                  {tempoRelativo(n.pub) && <span className="text-xs text-gray-400">{tempoRelativo(n.pub)}</span>}
+                  <div className="flex-1"></div>
+                  <button onClick={() => mandarPraPauta(n)} className="text-xs px-3 py-1.5 rounded-full font-bold flex-shrink-0" style={{ backgroundColor: AMARELO, color: PRETO }}>→ Pauta</button>
+                </div>
+              </div>
+            ))}
+          </Card>
+        </div>
+      )}
+
+      {!resultados && !carregando && !falhou && (
+        <p className="text-xs text-gray-400 text-center py-6">Escolha um tema acima pra ver as notícias mais recentes.</p>
+      )}
     </div>
   );
 }
