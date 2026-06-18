@@ -234,7 +234,7 @@ const DEFAULT_DATA = {
   capturas: [], demandas: [], pessoas: [], lembretes: [], lembreteChecks: {},
   anotacoes: [],
   pessoal: { tarefas: [] },
-  contas: { lancamentos: [], tagsCustom: [] },
+  contas: { lancamentos: [], tagsCustom: [], fixas: [], fixasPagas: {} },
   conteudos: { itens: [], pautas: [], datas: [] },
   lixeira: [],
 };
@@ -1042,15 +1042,50 @@ function AnotacoesScreen({ data, update, notaParaAbrir, onNotaAberta }) {
 }
 
 // ============ Vida Pessoal: Contas + Tarefas ============
+function CapturaFixa({ update }) {
+  const [nome, setNome] = useState("");
+  const [valor, setValor] = useState("");
+  const [dia, setDia] = useState("");
+  const add = () => {
+    const n = nome.trim();
+    const v = parseFloat((valor || "").replace(",", "."));
+    if (!n || isNaN(v)) return;
+    const d = parseInt(dia, 10);
+    update((dt) => { if (!dt.contas.fixas) dt.contas.fixas = []; dt.contas.fixas.push({ id: uid(), nome: n, valor: v, dia: isNaN(d) ? null : Math.min(31, Math.max(1, d)) }); });
+    setNome(""); setValor(""); setDia("");
+  };
+  return (
+    <Card className="p-3">
+      <div className="flex gap-2 mb-2">
+        <input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Conta (ex.: Aluguel)" className="flex-1 min-w-0 bg-gray-100 rounded-xl px-3 py-2.5 text-base outline-none" />
+      </div>
+      <div className="flex gap-2">
+        <input value={valor} onChange={(e) => setValor(e.target.value)} inputMode="decimal" placeholder="Valor" className="flex-1 min-w-0 bg-gray-100 rounded-xl px-3 py-2.5 text-base outline-none" />
+        <input value={dia} onChange={(e) => setDia(e.target.value)} inputMode="numeric" placeholder="Dia" className="w-20 bg-gray-100 rounded-xl px-3 py-2.5 text-base outline-none" />
+        <button onClick={add} className="px-4 py-2.5 rounded-xl text-sm font-bold flex-shrink-0" style={{ backgroundColor: AMARELO, color: PRETO }}>+</button>
+      </div>
+      <p className="text-xs text-gray-400 mt-1.5 px-1">Nome, valor e o dia do vencimento (1 a 31).</p>
+    </Card>
+  );
+}
+
 function ContasModulo({ data, update, today }) {
   const [tipo, setTipo] = useState("saida");
   const [mes, setMes] = useState(today.slice(0, 7));
   const [erroAdd, setErroAdd] = useState("");
   const [tagsAberto, setTagsAberto] = useState(false);
 
-  const contas = data.contas || { lancamentos: [], tagsCustom: [] };
+  const contas = data.contas || { lancamentos: [], tagsCustom: [], fixas: [], fixasPagas: {} };
   const tagsCustom = contas.tagsCustom || [];
+  const fixas = contas.fixas || [];
+  const fixasPagas = contas.fixasPagas || {};
   const todasTags = [...TAGS_BASE.map((t) => t.nome), ...tagsCustom.map((t) => t.nome), "Outros"];
+  const pagaChave = (id) => `${mes}:${id}`;
+  const estaPaga = (id) => !!fixasPagas[pagaChave(id)];
+  const fixasOrdenadas = [...fixas].sort((a, b) => (a.dia || 99) - (b.dia || 99));
+  const totalFixas = fixas.reduce((s, f) => s + (f.valor || 0), 0);
+  const fixasPagasValor = fixas.filter((f) => estaPaga(f.id)).reduce((s, f) => s + (f.valor || 0), 0);
+  const fixasPendentes = fixas.filter((f) => !estaPaga(f.id)).length;
 
   const lanc = (contas.lancamentos || []).filter((l) => (l.data || "").startsWith(mes));
   const saidas = lanc.filter((l) => l.tipo !== "entrada");
@@ -1108,6 +1143,49 @@ function ContasModulo({ data, update, today }) {
           <p className="text-xs font-bold" style={{ color: "#999" }}>Saldo</p>
           <p className="text-sm font-black mt-0.5" style={{ color: totalE - totalS >= 0 ? AMARELO : "#FF6B6B" }}>{fmtDinheiro(totalE - totalS)}</p>
         </Card>
+      </div>
+
+      {/* Contas fixas do mês */}
+      <div className="mb-4">
+        <div className="flex items-center justify-between mb-2 px-1">
+          <h3 className="text-sm font-black text-gray-500 uppercase tracking-wide">Contas fixas do mês</h3>
+          {fixas.length > 0 && (
+            <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={fixasPendentes === 0 ? { backgroundColor: "#E3F6E8", color: "#1E8E3E" } : { backgroundColor: "#FDE3E3", color: "#C0392B" }}>
+              {fixasPendentes === 0 ? "tudo pago ✓" : `${fixasPendentes} a pagar`}
+            </span>
+          )}
+        </div>
+        <Card className="divide-y divide-gray-100">
+          {fixas.length === 0 && <Vazio texto="Cadastre suas contas fixas (aluguel, luz, internet…) pra controlar o que já pagou." />}
+          {fixasOrdenadas.map((f) => {
+            const paga = estaPaga(f.id);
+            return (
+              <div key={f.id} className="flex items-center gap-3 px-4 py-3">
+                <Check checked={paga} cor={COR_ENTRADA} marca="#FFF"
+                  onChange={() => update((d) => { if (!d.contas.fixasPagas) d.contas.fixasPagas = {}; const k = `${mes}:${f.id}`; if (d.contas.fixasPagas[k]) delete d.contas.fixasPagas[k]; else d.contas.fixasPagas[k] = hojeStr(); })} />
+                <div className="flex-1 min-w-0">
+                  <EditableText value={f.nome} onSave={(v) => update((d) => { const a = d.contas.fixas.find((x) => x.id === f.id); if (a) a.nome = v; })}
+                    className={"text-base " + (paga ? "text-gray-400 line-through" : "text-gray-900 font-medium")} />
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span className="text-xs text-gray-400">vence dia {f.dia || "—"}</span>
+                    {!paga && f.dia && (() => { const diaHoje = new Date().getDate(); const venceMesAtual = mes === today.slice(0, 7); if (venceMesAtual && f.dia < diaHoje) return <span className="text-xs text-red-600 font-bold">· atrasada</span>; if (venceMesAtual && f.dia - diaHoje <= 3 && f.dia >= diaHoje) return <span className="text-xs font-bold" style={{ color: AMARELO_TEXTO }}>· vence em breve</span>; return null; })()}
+                  </div>
+                </div>
+                <span className={"text-base font-black flex-shrink-0 " + (paga ? "text-gray-300" : "text-gray-900")}>{fmtDinheiro(f.valor)}</span>
+                <ConfirmButton onConfirm={() => update((d) => { const a = d.contas.fixas.find((x) => x.id === f.id); if (a) jogarNaLixeira(d, "contaFixa", a); d.contas.fixas = d.contas.fixas.filter((x) => x.id !== f.id); })} />
+              </div>
+            );
+          })}
+          {fixas.length > 0 && (
+            <div className="flex items-center justify-between px-4 py-3 bg-gray-50">
+              <span className="text-sm font-bold text-gray-500">Pago {fmtDinheiro(fixasPagasValor)} de {fmtDinheiro(totalFixas)}</span>
+              <span className="text-sm font-black" style={{ color: fixasPendentes === 0 ? "#1E8E3E" : "#C0392B" }}>{fmtDinheiro(totalFixas - fixasPagasValor)} restante</span>
+            </div>
+          )}
+        </Card>
+        <div className="mt-2">
+          <CapturaFixa update={update} />
+        </div>
       </div>
 
       {/* Gráfico por tag */}
@@ -1747,11 +1825,12 @@ function BuscaOverlay({ data, onFechar, onIr }) {
 }
 
 // ============ Lixeira ============
-const TIPO_LABEL = { demanda:"Demanda", captura:"Captura", anotacao:"Anotação", tarefaPessoal:"Vida Pessoal", funcaoFixa:"Função fixa", pessoaItem:"Pessoa", pessoa:"Pessoa", card:"Quadro", coluna:"Coluna", lancamento:"Contas", conteudo:"Conteúdo", pauta:"Pauta", dataChave:"Data-chave" };
+const TIPO_LABEL = { demanda:"Demanda", captura:"Captura", anotacao:"Anotação", tarefaPessoal:"Vida Pessoal", funcaoFixa:"Função fixa", pessoaItem:"Pessoa", pessoa:"Pessoa", card:"Quadro", coluna:"Coluna", lancamento:"Contas", contaFixa:"Conta fixa", conteudo:"Conteúdo", pauta:"Pauta", dataChave:"Data-chave" };
 const textoDoLixo = (item) => {
   const p = item.payload || {};
   if (item.tipo === "anotacao") { const plain = htmlParaTexto(p.html || ""); return plain.split("\n").map((l) => l.trim()).filter(Boolean)[0] || "Sem título"; }
   if (item.tipo === "lancamento") return (p.descricao || "") + " · " + fmtDinheiro(p.valor);
+  if (item.tipo === "contaFixa") return (p.nome || "") + " · " + fmtDinheiro(p.valor);
   return p.titulo || p.texto || p.nome || p.descricao || "(sem texto)";
 };
 
@@ -1767,6 +1846,7 @@ function LixeiraOverlay({ data, update, onFechar }) {
     else if (item.tipo === "funcaoFixa") d.lembretes.push(p);
     else if (item.tipo === "pessoa") d.pessoas.push(p);
     else if (item.tipo === "lancamento") d.contas.lancamentos.unshift(p);
+    else if (item.tipo === "contaFixa") { if (!d.contas.fixas) d.contas.fixas = []; d.contas.fixas.push(p); }
     else if (item.tipo === "conteudo") { p.demandaId = null; d.conteudos.itens.unshift(p); }
     else if (item.tipo === "pauta") d.conteudos.pautas.unshift(p);
     else if (item.tipo === "dataChave") d.conteudos.datas.push(p);
@@ -1888,7 +1968,7 @@ export default function App() {
           tabNames: { ...DEFAULT_DATA.tabNames, ...(dados.tabNames || {}) },
           lembretesTitulo: (!dados.lembretesTitulo || dados.lembretesTitulo === "Funções fixas") ? "Dever diário" : dados.lembretesTitulo,
           pessoal: { tarefas: dados.pessoal?.tarefas || [] },
-          contas: { lancamentos: dados.contas?.lancamentos || [], tagsCustom: dados.contas?.tagsCustom || [] },
+          contas: { lancamentos: dados.contas?.lancamentos || [], tagsCustom: dados.contas?.tagsCustom || [], fixas: dados.contas?.fixas || [], fixasPagas: dados.contas?.fixasPagas || {} },
           conteudos: { itens: dados.conteudos?.itens || [], pautas: dados.conteudos?.pautas || [], datas: dados.conteudos?.datas || [] },
           lixeira: dados.lixeira,
         });
